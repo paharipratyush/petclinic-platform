@@ -53,7 +53,7 @@ resource "aws_eks_cluster" "main" {
     endpoint_private_access = false
   }
 
-  # api + audit + authenticator per technical spec
+  # api + audit + authenticator per technical spec (PETPLAT-12)
   enabled_cluster_log_types = ["api", "audit", "authenticator"]
 
   access_config {

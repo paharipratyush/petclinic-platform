@@ -17,7 +17,7 @@ variable "environment" {
 variable "cluster_version" {
   description = "Kubernetes version for the EKS cluster"
   type        = string
-  default     = "1.29"
+  default     = "1.32"
 }
 
 variable "subnet_ids" {
@@ -80,30 +80,30 @@ variable "admin_iam_arns" {
 # ── Add-on versions ───────────────────────────────────────────────────────────
 # Pinned per spec — never use "latest". Update deliberately during K8s upgrades.
 # Find compatible versions:
-#   aws eks describe-addon-versions --kubernetes-version 1.29 --addon-name <name>
+#   aws eks describe-addon-versions --kubernetes-version 1.32 --addon-name <name>
 
 variable "addon_version_coredns" {
   description = "Pinned version for the coredns EKS managed add-on"
   type        = string
-  default     = "v1.11.1-eksbuild.9"
+  default     = "v1.11.4-eksbuild.33"
 }
 
 variable "addon_version_kube_proxy" {
   description = "Pinned version for the kube-proxy EKS managed add-on"
   type        = string
-  default     = "v1.29.10-eksbuild.2"
+  default     = "v1.32.13-eksbuild.5"
 }
 
 variable "addon_version_vpc_cni" {
   description = "Pinned version for the vpc-cni EKS managed add-on"
   type        = string
-  default     = "v1.18.5-eksbuild.1"
+  default     = "v1.20.5-eksbuild.1"
 }
 
 variable "addon_version_ebs_csi" {
   description = "Pinned version for the aws-ebs-csi-driver EKS managed add-on"
   type        = string
-  default     = "v1.37.0-eksbuild.1"
+  default     = "v1.61.1-eksbuild.1"
 }
 
 variable "tags" {
