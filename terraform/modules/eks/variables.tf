@@ -42,9 +42,9 @@ variable "node_instance_types" {
 }
 
 variable "node_ami_type" {
-  description = "AMI type for managed node group (AL2_ARM_64 for Graviton t4g)"
+  description = "AMI type for managed node group (AL2023_ARM_64_STANDARD for Graviton t4g)"
   type        = string
-  default     = "AL2_ARM_64"
+  default     = "AL2023_ARM_64_STANDARD"
 }
 
 variable "node_min_size" {
