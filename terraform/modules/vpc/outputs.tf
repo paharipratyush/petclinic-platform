@@ -32,3 +32,8 @@ output "alb_sg_id" {
   description = "Security group ID for the ALB (HTTP/HTTPS from internet)"
   value       = aws_security_group.alb.id
 }
+
+output "internet_gateway_id" {
+  description = "ID of the Internet Gateway"
+  value       = aws_internet_gateway.main.id
+}

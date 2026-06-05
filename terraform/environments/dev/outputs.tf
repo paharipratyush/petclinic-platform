@@ -27,3 +27,8 @@ output "alb_sg_id" {
   description = "ALB security group ID"
   value       = module.vpc.alb_sg_id
 }
+
+output "internet_gateway_id" {
+  description = "Internet Gateway ID"
+  value       = module.vpc.internet_gateway_id
+}
