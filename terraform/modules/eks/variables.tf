@@ -7,6 +7,11 @@ variable "project" {
 variable "environment" {
   description = "Environment (dev or prod)"
   type        = string
+
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment must be 'dev' or 'prod'."
+  }
 }
 
 variable "cluster_version" {
@@ -16,7 +21,7 @@ variable "cluster_version" {
 }
 
 variable "subnet_ids" {
-  description = "Subnet IDs for the EKS cluster and node group"
+  description = "Subnet IDs for the EKS cluster and managed node group"
   type        = list(string)
 }
 
@@ -37,7 +42,7 @@ variable "node_instance_types" {
 }
 
 variable "node_ami_type" {
-  description = "AMI type for managed node group (AL2_ARM_64 for Graviton)"
+  description = "AMI type for managed node group (AL2_ARM_64 for Graviton t4g)"
   type        = string
   default     = "AL2_ARM_64"
 }
@@ -61,13 +66,48 @@ variable "node_desired_size" {
 }
 
 variable "node_disk_size" {
-  description = "EBS disk size in GB for each node"
+  description = "EBS disk size in GB per node (20 GB fits within the 30 GB EBS free tier)"
   type        = number
   default     = 20
 }
 
+variable "admin_iam_arns" {
+  description = "IAM user/role ARNs granted cluster-admin via EKS access entries. The cluster creator already has implicit admin access with API_AND_CONFIG_MAP mode."
+  type        = list(string)
+  default     = []
+}
+
+# ── Add-on versions ───────────────────────────────────────────────────────────
+# Pinned per spec — never use "latest". Update deliberately during K8s upgrades.
+# Find compatible versions:
+#   aws eks describe-addon-versions --kubernetes-version 1.29 --addon-name <name>
+
+variable "addon_version_coredns" {
+  description = "Pinned version for the coredns EKS managed add-on"
+  type        = string
+  default     = "v1.11.1-eksbuild.9"
+}
+
+variable "addon_version_kube_proxy" {
+  description = "Pinned version for the kube-proxy EKS managed add-on"
+  type        = string
+  default     = "v1.29.10-eksbuild.2"
+}
+
+variable "addon_version_vpc_cni" {
+  description = "Pinned version for the vpc-cni EKS managed add-on"
+  type        = string
+  default     = "v1.18.5-eksbuild.1"
+}
+
+variable "addon_version_ebs_csi" {
+  description = "Pinned version for the aws-ebs-csi-driver EKS managed add-on"
+  type        = string
+  default     = "v1.37.0-eksbuild.1"
+}
+
 variable "tags" {
-  description = "Additional tags to merge with default tags"
+  description = "Additional tags to merge with default resource tags"
   type        = map(string)
   default     = {}
 }
