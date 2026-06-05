@@ -13,6 +13,8 @@ locals {
 
 data "aws_region" "current" {}
 
+data "aws_caller_identity" "current" {}
+
 # ── Cluster IAM Role ──────────────────────────────────────────────────────────
 
 data "aws_iam_policy_document" "cluster_assume_role" {
@@ -200,13 +202,20 @@ resource "aws_eks_node_group" "main" {
 
 # ── kubectl Access Entries ────────────────────────────────────────────────────
 #
-# With API_AND_CONFIG_MAP authentication mode, the cluster creator gets implicit
-# admin access via aws-auth ConfigMap. These access entries grant explicit
-# cluster-admin to additional IAM principals (passed via admin_iam_arns).
-# Add your IAM user/role ARN to admin_iam_arns in the environment to use this.
+# Always grants the deploying IAM principal cluster-admin (PETPLAT-14).
+# Additional principals can be added via admin_iam_arns. The deploying
+# principal is always included so `kubectl get nodes` works immediately after
+# terraform apply without any manual configuration.
+
+locals {
+  all_admin_arns = distinct(concat(
+    [data.aws_caller_identity.current.arn],
+    var.admin_iam_arns,
+  ))
+}
 
 resource "aws_eks_access_entry" "admin" {
-  for_each = toset(var.admin_iam_arns)
+  for_each = toset(local.all_admin_arns)
 
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = each.value
@@ -216,7 +225,7 @@ resource "aws_eks_access_entry" "admin" {
 }
 
 resource "aws_eks_access_policy_association" "admin" {
-  for_each = toset(var.admin_iam_arns)
+  for_each = toset(local.all_admin_arns)
 
   cluster_name  = aws_eks_cluster.main.name
   principal_arn = each.value
