@@ -34,7 +34,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = merge(local.base_tags, {
-    Name                                          = "${var.project}-${var.environment}-public-${count.index + 1}"
+    Name                                          = "${var.project}-${var.environment}-public-${var.availability_zones[count.index]}"
     "kubernetes.io/cluster/${local.cluster_name}" = "shared"
     "kubernetes.io/role/elb"                      = "1"
   })
@@ -195,6 +195,18 @@ resource "aws_security_group_rule" "node_ingress_self" {
   self              = true
 }
 
+# Explicit kubelet API rule per the technical spec. Although node_ingress_cluster_all
+# already covers all ports from the cluster SG, this rule is kept as specified.
+resource "aws_security_group_rule" "node_ingress_kubelet" {
+  type                     = "ingress"
+  description              = "Kubelet API from control plane"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.eks_node.id
+  source_security_group_id = aws_security_group.eks_cluster.id
+}
+
 # ALB routes traffic to pods via NodePort (30000-32767). The ALB controller
 # configures target groups pointing at this range on the node's IP.
 resource "aws_security_group_rule" "node_ingress_nodeport_from_alb" {
@@ -277,4 +289,17 @@ resource "aws_security_group_rule" "alb_egress_health_check" {
   protocol                 = "tcp"
   security_group_id        = aws_security_group.alb.id
   source_security_group_id = aws_security_group.eks_node.id
+}
+
+# ── Default SG Lockdown ───────────────────────────────────────────────────────
+#
+# Every VPC gets a default security group from AWS that allows all traffic
+# between members of that SG. Locking it down (no rules) prevents any resource
+# from accidentally using it and getting unintended open access.
+resource "aws_default_security_group" "lockdown" {
+  vpc_id = aws_vpc.main.id
+
+  tags = merge(local.base_tags, {
+    Name = "${var.project}-${var.environment}-default-sg-locked"
+  })
 }
