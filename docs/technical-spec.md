@@ -187,11 +187,42 @@ Four security groups per environment. Security groups are the **primary access c
 | Parameter | Dev | Prod |
 |-----------|-----|------|
 | Cluster Name | `petclinic-dev` | `petclinic-prod` |
-| Kubernetes Version | `1.29` | `1.29` |
+| Kubernetes Version | `1.34` | `1.34` |
 | API Server Endpoint | Public | Public |
 | Authentication Mode | `API_AND_CONFIG_MAP` | `API_AND_CONFIG_MAP` |
 | Cluster Logging | `api`, `audit`, `authenticator` | `api`, `audit`, `authenticator` |
 | Subnets | Public (AZ a + b) | Public (AZ a + b) |
+
+### EKS Kubernetes Version — Standard vs Extended Support
+
+> **Important for students and tutorial followers.** The K8s version choice directly affects how much you pay for the EKS control plane.
+
+AWS supports each Kubernetes minor version for **14 months** (standard support, included in the base price), then offers a **12-month extension** at significant extra cost. After that the version is EOL.
+
+| Support Tier | Control Plane Price | Who pays this |
+|---|---|---|
+| **Standard** | $0.10 / hr (~$73/month) | Everyone on a current version |
+| **Extended** | $0.10 + $0.60 = **$0.70 / hr (~$511/month)** | Anyone on an older but not yet EOL version |
+| **EOL** | Cluster creation rejected | Version no longer accepted by AWS |
+
+**Why this surprises people:** Tutorial videos are recorded when the version shown is in standard support. By the time students follow the video months later, that version may have quietly moved to extended support — and the price jumps 7× with no warning in the console.
+
+**Support calendar as of June 2026** (source: [AWS EKS version lifecycle docs](https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions.html)):
+
+| Version | Tier | Control Plane Cost |
+|---|---|---|
+| 1.33 – 1.36 | Standard ✅ | $0.10 / hr |
+| 1.30 – 1.32 | Extended ⚠️ | $0.70 / hr |
+| 1.29 and below | EOL ❌ | Rejected by AWS |
+
+**This project uses 1.34 (standard support, ~$0.10/hr).** When you need to upgrade in the future, pick the lowest version currently in standard support and update `cluster_version` in `terraform/modules/eks/variables.tf`, then update addon versions to match (see `docs/runbook.md`).
+
+**Check your cluster's current support tier at any time:**
+```bash
+aws eks describe-cluster --name petclinic-dev --region eu-central-1 \
+  --query "cluster.upgradePolicy.supportType" --output text
+# Returns: STANDARD or EXTENDED
+```
 
 ### Cluster IAM Role
 
@@ -215,7 +246,7 @@ Created from EKS cluster identity issuer URL. Required for IRSA (IAM Roles for S
 | Max Size | 4 | 4 |
 | Desired Size | 2 | 2 |
 | Disk Size | 20 GB | 20 GB |
-| AMI Type | `AL2_ARM_64` | `AL2_ARM_64` |
+| AMI Type | `AL2023_ARM_64_STANDARD` | `AL2023_ARM_64_STANDARD` |
 
 > **Cost note:** t4g.small instances (2 vCPU, 2 GiB) are eligible for the AWS Graviton free trial (750 hrs/month until Dec 2026). Both dev and prod use identical sizing — this is a cost optimization for a learning project. In production, you would use larger instances (e.g., m7g.xlarge). Students should understand this trade-off.
 
