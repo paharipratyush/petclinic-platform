@@ -286,7 +286,7 @@ resource "aws_iam_role_policy_attachment" "ebs_csi_policy" {
 # ── EKS Managed Add-ons ───────────────────────────────────────────────────────
 #
 # Versions are pinned — never use "latest". To find the latest compatible version:
-#   aws eks describe-addon-versions --kubernetes-version 1.29 --addon-name <name>
+#   aws eks describe-addon-versions --kubernetes-version 1.34 --addon-name <name>
 #
 # Upgrade deliberately by updating the addon_version_* variables.
 

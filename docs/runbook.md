@@ -84,7 +84,7 @@
 1. Find the latest add-on version compatible with your cluster's Kubernetes version:
    ```bash
    aws eks describe-addon-versions \
-     --kubernetes-version 1.32 \
+     --kubernetes-version 1.34 \
      --addon-name <addon-name> \
      --region eu-central-1 \
      --query "addons[0].addonVersions[*].{version: addonVersion, default: compatibilities[0].defaultVersion}" \
