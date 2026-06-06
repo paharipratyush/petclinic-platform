@@ -12,6 +12,9 @@
 5. [RDS: Database Initialization Strategy](#rds-database-initialization-strategy)
 6. [RDS: Retrieve Credentials from Secrets Manager](#rds-retrieve-credentials-from-secrets-manager)
 7. [RDS: Free-Tier Backup Retention Deviation](#rds-free-tier-backup-retention-deviation)
+8. [DNS: Delegate Domain to Route 53](#dns-delegate-domain-to-route-53)
+9. [DNS: Install AWS Load Balancer Controller and Apply Ingress](#dns-install-aws-load-balancer-controller-and-apply-ingress)
+10. [DNS: Create Route 53 A Record After ALB Provisioning](#dns-create-route-53-a-record-after-alb-provisioning)
 
 ---
 
@@ -390,3 +393,179 @@ aws rds restore-db-instance-from-db-snapshot \
 ### When Upgrading Account Tier
 
 If the AWS account is upgraded from free tier, re-enable automated backups by changing `backup_retention_period` in `terraform/environments/dev/main.tf` from `0` to `7` and re-applying.
+
+---
+
+## DNS: Delegate Domain to Route 53
+
+**Related stories:** PETPLAT-28, PETPLAT-32
+
+### Overview
+
+The DNS module creates a Route 53 hosted zone and an ACM wildcard certificate (`*.{domain}`) with DNS validation. The ACM certificate cannot be issued until Route 53 is authoritative for your domain — which requires updating your registrar's nameservers.
+
+**When:** After the first `terraform apply` for the target environment. Do this before running `install-lb-controller.sh`.
+
+**Who:** Domain registrar admin access (Cloudflare dashboard, Route 53 console, etc.) + Terraform access
+
+**Time:** ~5 minutes to update NS records + 5–30 minutes for DNS propagation + ACM certificate issuance
+
+**Steps:**
+
+1. Run `terraform apply` for the target environment. The apply will block at `aws_acm_certificate_validation` until the certificate is issued:
+   ```bash
+   cd terraform/environments/dev
+   terraform plan -var="domain_name=example.com" -out plan.out
+   terraform apply plan.out
+   ```
+   Leave this running. Open a second terminal for the next steps.
+
+2. Get the Route 53 nameservers from the Terraform output:
+   ```bash
+   terraform -chdir=terraform/environments/dev output dns_name_servers
+   ```
+   You will see 4 NS records like:
+   ```
+   [
+     "ns-1234.awsdns-56.com.",
+     "ns-789.awsdns-01.co.uk.",
+     "ns-012.awsdns-34.net.",
+     "ns-567.awsdns-89.org.",
+   ]
+   ```
+
+3. Update your domain registrar with these nameservers:
+   - **Cloudflare registrar:** Dashboard → your domain → DNS → Nameservers → Custom → paste all 4 NS records (without trailing dot)
+   - **Route 53 registrar:** Dashboard → Registered domains → your domain → Update nameservers
+   - **Other registrar:** DNS Settings / Nameserver Settings → replace existing NS records with the 4 above
+
+4. DNS propagation typically takes 5–30 minutes but can take up to 48 hours. Monitor progress:
+   ```bash
+   # Check if your domain now resolves via Route 53 NS
+   dig NS example.com @8.8.8.8
+   ```
+   Once you see the Route 53 NS records in the response, ACM will validate and the `terraform apply` will complete.
+
+**Verify:**
+```bash
+# Confirm certificate is issued
+aws acm describe-certificate \
+  --certificate-arn "$(terraform -chdir=terraform/environments/dev output -raw certificate_arn)" \
+  --region eu-central-1 \
+  --query "Certificate.Status" \
+  --output text
+# Expected: ISSUED
+```
+
+**Rollback:**
+- Revert your registrar's nameservers to the previous values to move DNS back to the original provider.
+- The Route 53 hosted zone can be destroyed with `terraform destroy -target=module.dns.aws_route53_zone.main` (requires approval per safety hooks).
+
+---
+
+## DNS: Install AWS Load Balancer Controller and Apply Ingress
+
+**Related stories:** PETPLAT-29, PETPLAT-30
+
+### Procedure: Install the AWS Load Balancer Controller and create the ALB
+
+**When:** After `terraform apply` has completed (IRSA role and ACM cert exist) and DNS is delegated to Route 53.
+
+**Who:** kubectl access to the EKS cluster + helm installed
+
+**Time:** ~5 minutes
+
+**Prerequisites:**
+- `kubectl` configured: `aws eks update-kubeconfig --name petclinic-{env} --region eu-central-1`
+- `helm` installed (>= 3.x)
+- `terraform apply` completed successfully (outputs `lb_controller_role_arn` and `certificate_arn` must exist)
+
+**Steps:**
+
+Run the install script for the target environment:
+```bash
+./scripts/install-lb-controller.sh --env dev
+```
+
+The script performs all steps automatically:
+1. Adds the `eks` Helm chart repository
+2. Installs (or upgrades) `aws-load-balancer-controller` in `kube-system`, annotated with the IRSA role ARN
+3. Waits for the controller deployment to be ready
+4. Applies `k8s/base/ingress/ingress.yaml` with the ACM certificate ARN and ALB security group substituted
+5. Waits for the ALB to be provisioned and prints the ALB DNS name
+
+**Verify:**
+```bash
+# Controller pods running
+kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+
+# IngressClass created
+kubectl get ingressclass alb
+
+# Ingress has an ALB address
+kubectl get ingress petclinic-ingress -n petclinic-{env}
+# ADDRESS column should show an ALB hostname like k8s-petclini-xxxx.eu-central-1.elb.amazonaws.com
+```
+
+**Rollback:**
+```bash
+helm uninstall aws-load-balancer-controller -n kube-system
+kubectl delete ingress petclinic-ingress -n petclinic-{env}
+```
+The ALB is deleted when the Ingress resource is deleted.
+
+---
+
+## DNS: Create Route 53 A Record After ALB Provisioning
+
+**Related stories:** PETPLAT-31
+
+### Procedure: Point your domain at the ALB
+
+**When:** After `install-lb-controller.sh` has run and the Ingress shows an ALB DNS name.
+
+**Who:** Terraform access to the environment
+
+**Time:** ~2 minutes (Terraform apply) + DNS propagation (typically instant for Route 53 aliases)
+
+**Steps:**
+
+1. Get the ALB DNS name from the Ingress:
+   ```bash
+   ALB_DNS=$(kubectl get ingress petclinic-ingress -n petclinic-dev \
+     -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+   echo $ALB_DNS
+   # Example: k8s-petclini-a1b2c3d4-1234567890.eu-central-1.elb.amazonaws.com
+   ```
+
+2. Plan and apply the Route 53 A record (alias to ALB):
+   ```bash
+   cd terraform/environments/dev
+   terraform plan -var="domain_name=example.com" -var="alb_dns_name=$ALB_DNS" -out plan.out
+   terraform apply plan.out
+   ```
+   This creates `petclinic-dev.example.com → ALB` (for dev) or `petclinic.example.com → ALB` (for prod).
+
+3. For subsequent applies (e.g., to make changes), pass the same variable:
+   ```bash
+   terraform plan -var="domain_name=example.com" -var="alb_dns_name=$ALB_DNS" -out plan.out
+   ```
+   Or add `alb_dns_name = "..."` to the environment's `terraform.tfvars` (do not commit this file — it may contain other sensitive values).
+
+**Verify:**
+```bash
+# DNS lookup
+nslookup petclinic-dev.example.com
+
+# HTTPS access
+curl -I https://petclinic-dev.example.com
+# Expected: HTTP/2 200 (or 302 redirect from api-gateway)
+```
+
+**If HTTP redirects to HTTPS:** This is correct behavior — the ALB listener is configured to redirect port 80 → 443.
+
+**If DNS does not resolve:** Check that NS delegation is still active:
+```bash
+dig NS example.com @8.8.8.8
+# Should show Route 53 nameservers
+```

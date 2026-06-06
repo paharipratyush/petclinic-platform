@@ -1,0 +1,39 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: petclinic-ingress
+  # Namespace is environment-specific — apply with:
+  #   kubectl apply -f k8s/base/ingress/ingress.yaml -n petclinic-{env}
+  # Or use scripts/install-lb-controller.sh which handles substitution automatically.
+  labels:
+    app.kubernetes.io/name: petclinic-ingress
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    # AWS Load Balancer Controller annotations
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    # Replace CERTIFICATE_ARN_PLACEHOLDER with the value from:
+    #   terraform -chdir=terraform/environments/{env} output -raw certificate_arn
+    # Or run scripts/install-lb-controller.sh which does this automatically.
+    alb.ingress.kubernetes.io/certificate-arn: "CERTIFICATE_ARN_PLACEHOLDER"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
+    alb.ingress.kubernetes.io/healthcheck-port: "8080"
+    alb.ingress.kubernetes.io/security-groups: "ALB_SG_PLACEHOLDER"
+    # Tags the ALB with cluster name so the IRSA policy conditions match
+    alb.ingress.kubernetes.io/tags: "Project=petclinic,ManagedBy=terraform"
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080

@@ -121,3 +121,28 @@ output "rds_db_name" {
   description = "Database name on the RDS instance (used in K8s ConfigMaps and JDBC URLs)"
   value       = module.rds.db_name
 }
+
+output "dns_zone_id" {
+  description = "Route 53 hosted zone ID"
+  value       = module.dns.zone_id
+}
+
+output "dns_name_servers" {
+  description = "Route 53 NS records — update your domain registrar to delegate DNS to these nameservers before running install-lb-controller.sh"
+  value       = module.dns.name_servers
+}
+
+output "certificate_arn" {
+  description = "ACM wildcard certificate ARN — used in Ingress annotation and by install-lb-controller.sh"
+  value       = module.dns.certificate_arn
+}
+
+output "lb_controller_role_arn" {
+  description = "IRSA role ARN for AWS Load Balancer Controller — passed to Helm via install-lb-controller.sh"
+  value       = aws_iam_role.lb_controller.arn
+}
+
+output "app_url" {
+  description = "Application URL (accessible after DNS propagation and ALB provisioning)"
+  value       = "https://petclinic.${var.domain_name}"
+}
