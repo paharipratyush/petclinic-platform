@@ -23,6 +23,8 @@ resource "aws_ecr_repository" "services" {
 
   name                 = "${var.project}-${var.environment}/${each.value}"
   image_tag_mutability = var.tag_mutability
+  # Allows terraform destroy to succeed even when images are present in the repo
+  force_delete         = true
 
   # Scan every image on push — fails CI if CRITICAL CVEs are found
   image_scanning_configuration {
