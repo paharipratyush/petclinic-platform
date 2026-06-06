@@ -136,3 +136,14 @@ output "app_url" {
   description = "Application URL (accessible after DNS propagation and ALB provisioning)"
   value       = "https://petclinic-dev.${var.domain_name}"
 }
+
+output "eso_role_arn" {
+  description = "IRSA role ARN for External Secrets Operator — passed to Helm via install-eso.sh"
+  value       = aws_iam_role.eso.arn
+}
+
+output "openai_secret_arn" {
+  description = "Secrets Manager ARN for the OpenAI API key"
+  value       = module.secrets.openai_secret_arn
+  sensitive   = true
+}

@@ -1,0 +1,21 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: openai-api-key
+  labels:
+    app.kubernetes.io/name: openai-api-key
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: secrets
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: openai-api-key
+    creationPolicy: Owner
+  data:
+    - secretKey: OPENAI_API_KEY
+      remoteRef:
+        key: petclinic/dev/openai-api-key

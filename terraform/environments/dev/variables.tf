@@ -26,3 +26,10 @@ variable "alb_dns_name" {
   type        = string
   default     = ""
 }
+
+variable "openai_api_key" {
+  description = "OpenAI API key for the GenAI service. Passed to Secrets Manager — never hardcoded. Set via TF_VAR_openai_api_key environment variable or a secrets-only .tfvars file that is never committed."
+  type        = string
+  sensitive   = true
+  default     = "demo"
+}

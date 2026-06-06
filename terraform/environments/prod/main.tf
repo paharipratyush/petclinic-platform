@@ -379,6 +379,88 @@ resource "aws_iam_role_policy_attachment" "lb_controller" {
   policy_arn = aws_iam_policy.lb_controller.arn
 }
 
+# ------- E-7: Secrets (PETPLAT-33, PETPLAT-37) -------
+
+data "aws_caller_identity" "current" {}
+
+module "secrets" {
+  source = "../../modules/secrets"
+
+  project                  = var.project
+  environment              = var.environment
+  openai_api_key           = var.openai_api_key
+  recovery_window_in_days  = 30
+
+  tags = {
+    Component = "secrets"
+  }
+}
+
+# ------- E-7: ESO IRSA (PETPLAT-37) -------
+
+data "aws_iam_policy_document" "eso" {
+  statement {
+    sid    = "SecretsManagerRead"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:DescribeSecret",
+    ]
+    resources = [
+      "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:petclinic/${var.environment}/*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "eso" {
+  name        = "petclinic-${var.environment}-eso-policy"
+  description = "IAM policy for External Secrets Operator on petclinic-${var.environment}"
+  policy      = data.aws_iam_policy_document.eso.json
+
+  tags = {
+    Component = "secrets"
+  }
+}
+
+data "aws_iam_policy_document" "eso_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${module.eks.oidc_provider_url}:sub"
+      values   = ["system:serviceaccount:external-secrets:external-secrets-sa"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${module.eks.oidc_provider_url}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "eso" {
+  name               = "petclinic-${var.environment}-eso-role"
+  description        = "IRSA role for External Secrets Operator (petclinic-${var.environment})"
+  assume_role_policy = data.aws_iam_policy_document.eso_assume.json
+
+  tags = {
+    Component = "secrets"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "eso" {
+  role       = aws_iam_role.eso.name
+  policy_arn = aws_iam_policy.eso.arn
+}
+
 # ------- E-6: App DNS record in Cloudflare (PETPLAT-31) -------
 # Leave alb_dns_name empty on first apply.
 # After scripts/install-lb-controller.sh creates the ALB, set var.alb_dns_name
