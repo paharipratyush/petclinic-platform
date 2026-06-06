@@ -22,18 +22,21 @@ resource "aws_acm_certificate" "main" {
 # cert, both domains share the same CNAME, so deduplicating by resource_record_name
 # produces a single Cloudflare record that satisfies both SANs.
 resource "cloudflare_record" "cert_validation" {
+  # The wildcard (*.domain) and apex (domain) SANs share the same validation CNAME.
+  # Using the grouping operator (...) deduplicates by resource_record_name so only
+  # one Cloudflare record is created regardless of how many SANs share it.
   for_each = {
     for dvo in aws_acm_certificate.main.domain_validation_options : dvo.resource_record_name => {
       name    = trimsuffix(trimsuffix(dvo.resource_record_name, ".${var.domain_name}."), ".")
       content = trimsuffix(dvo.resource_record_value, ".")
       type    = dvo.resource_record_type
-    }
+    }...
   }
 
   zone_id = data.cloudflare_zone.main.id
-  name    = each.value.name
-  content = each.value.content
-  type    = each.value.type
+  name    = each.value[0].name
+  content = each.value[0].content
+  type    = each.value[0].type
   ttl     = 60
   proxied = false
 }
