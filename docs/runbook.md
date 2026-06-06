@@ -7,6 +7,8 @@
 
 1. [EKS: Add an IAM User or Role to the Cluster](#eks-add-an-iam-user-or-role-to-the-cluster)
 2. [EKS: Upgrade Add-on Versions](#eks-upgrade-add-on-versions)
+3. [ECR: Authenticate Docker to the Registry](#ecr-authenticate-docker-to-the-registry)
+4. [ECR: Build and Push Images Manually](#ecr-build-and-push-images-manually)
 
 ---
 
@@ -140,3 +142,98 @@ Status should be `ACTIVE`.
 **Rollback:**
 - Revert the version variable to the previous value in `variables.tf` and re-apply.
 - EKS supports downgrading add-on versions via Terraform the same way — just change the version string and apply.
+
+---
+
+## ECR: Authenticate Docker to the Registry
+
+**Related stories:** PETPLAT-21
+
+### Procedure: Log in Docker to ECR before pushing or pulling images
+
+**When:** Before running `docker push` or `docker pull` against ECR. ECR tokens expire after 12 hours — re-run this if you get an authentication error.
+
+**Who:** Any engineer with AWS credentials configured (`aws sts get-caller-identity` must work)
+
+**Time:** ~5 seconds
+
+**Steps:**
+
+1. Run the helper script:
+   ```bash
+   ./scripts/ecr-login.sh
+   ```
+   Override the region if needed:
+   ```bash
+   ./scripts/ecr-login.sh --region eu-west-1
+   ```
+
+2. The script auto-detects your AWS account ID and logs Docker in to:
+   ```
+   {account}.dkr.ecr.eu-central-1.amazonaws.com
+   ```
+
+**Verify:**
+- Script prints `Login successful`
+- `docker pull {account}.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev/config-server:v1.0.0` succeeds
+
+**Rollback:**
+- Not applicable. If login fails, check AWS credentials with `aws sts get-caller-identity` and ensure Docker Desktop is running.
+
+---
+
+## ECR: Build and Push Images Manually
+
+**Related stories:** PETPLAT-85
+
+### Procedure: Build ARM64 images from source and push to ECR
+
+**When:** Initial setup, or when CI is unavailable and you need to push a new image tag manually. In normal operations, GitHub Actions handles this automatically on every commit.
+
+**Who:** Engineer with Docker Desktop running, Java 17 installed, AWS credentials, and the app repo cloned locally
+
+**Time:** ~15–20 minutes (Maven build ~5 min + ARM64 image builds ~90 sec each × 8 services)
+
+**Steps:**
+
+1. Ensure ECR repos exist (`terraform apply` must have been run for the target environment).
+
+2. Have the app repo cloned:
+   ```bash
+   git clone https://github.com/spring-petclinic/spring-petclinic-microservices.git /path/to/app-repo
+   ```
+
+3. Run the build and push script:
+   ```bash
+   ./scripts/build-push.sh \
+     --app-repo /path/to/spring-petclinic-microservices \
+     --env dev \
+     --tag v1.0.0
+   ```
+   Use `--env prod` and a commit SHA tag for production:
+   ```bash
+   ./scripts/build-push.sh \
+     --app-repo /path/to/spring-petclinic-microservices \
+     --env prod \
+     --tag a1b2c3d
+   ```
+
+4. The script:
+   - Builds all JARs with `./mvnw clean install -DskipTests`
+   - Sets up Docker buildx for `linux/arm64` (required for Graviton t4g nodes)
+   - Authenticates to ECR automatically
+   - Builds and pushes all 8 images sequentially
+
+**Verify:**
+```bash
+for svc in config-server discovery-server api-gateway customers-service visits-service vets-service genai-service admin-server; do
+  tag=$(aws ecr describe-images --region eu-central-1 --repository-name "petclinic-dev/$svc" \
+    --filter tagStatus=TAGGED --query "imageDetails[0].imageTags[0]" --output text)
+  echo "$svc: $tag"
+done
+```
+All 8 services should show the expected tag.
+
+**Rollback:**
+- ECR repos in dev use `MUTABLE` tags — you can overwrite a tag by re-running the script with the same `--tag` value.
+- ECR repos in prod use `IMMUTABLE` tags — to fix a bad image, push a new tag and update `helm-values/{service}.yaml`.
