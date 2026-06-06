@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/name: petclinic-ingress
     app.kubernetes.io/part-of: petclinic
     app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: infrastructure
   annotations:
     # AWS Load Balancer Controller annotations
     kubernetes.io/ingress.class: alb
@@ -23,7 +24,7 @@ metadata:
     alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
     alb.ingress.kubernetes.io/healthcheck-port: "8080"
     alb.ingress.kubernetes.io/security-groups: "ALB_SG_PLACEHOLDER"
-    # Tags the ALB with cluster name so the IRSA policy conditions match
+    # Organizational tags on the ALB; the elbv2.k8s.aws/cluster tag is added automatically by the controller
     alb.ingress.kubernetes.io/tags: "Project=petclinic,ManagedBy=terraform"
 spec:
   ingressClassName: alb

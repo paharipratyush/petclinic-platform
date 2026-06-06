@@ -130,10 +130,10 @@ resource "aws_security_group" "rds" {
 }
 
 # The only internet-facing SG. Accepts HTTP/HTTPS from anywhere; egress is
-# scoped to EKS nodes (NodePort range for target groups, port 8080 for health checks).
+# scoped to EKS nodes (port 8080 for target-type: ip pod traffic and health checks).
 resource "aws_security_group" "alb" {
   name        = "${var.project}-${var.environment}-alb-sg"
-  description = "ALB: HTTP/HTTPS from internet, egress to EKS node NodePort range only"
+  description = "ALB: HTTP/HTTPS from internet, egress to EKS nodes on pod port 8080"
   vpc_id      = aws_vpc.main.id
 
   tags = merge(local.base_tags, {
@@ -207,13 +207,24 @@ resource "aws_security_group_rule" "node_ingress_kubelet" {
   source_security_group_id = aws_security_group.eks_cluster.id
 }
 
-# ALB routes traffic to pods via NodePort (30000-32767). The ALB controller
-# configures target groups pointing at this range on the node's IP.
+# NodePort range kept for compatibility; primary traffic path is target-type: ip (see below).
 resource "aws_security_group_rule" "node_ingress_nodeport_from_alb" {
   type                     = "ingress"
-  description              = "NodePort range from ALB (target group health checks and requests)"
+  description              = "NodePort range from ALB (fallback for target-type: instance)"
   from_port                = 30000
   to_port                  = 32767
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.eks_node.id
+  source_security_group_id = aws_security_group.alb.id
+}
+
+# Required for target-type: ip. The ALB registers pod ENI IPs directly as targets
+# and sends traffic to the container port, bypassing NodePort entirely.
+resource "aws_security_group_rule" "node_ingress_pod_from_alb" {
+  type                     = "ingress"
+  description              = "ALB to pod port 8080 (target-type: ip, direct pod routing)"
+  from_port                = 8080
+  to_port                  = 8080
   protocol                 = "tcp"
   security_group_id        = aws_security_group.eks_node.id
   source_security_group_id = aws_security_group.alb.id
@@ -269,10 +280,10 @@ resource "aws_security_group_rule" "alb_ingress_https" {
   cidr_blocks       = ["0.0.0.0/0"]
 }
 
-# ALB forwards requests to pods via the NodePort range on each node's IP.
+# Retained for target-type: instance fallback. Primary path is port 8080 via target-type: ip.
 resource "aws_security_group_rule" "alb_egress_nodeport" {
   type                     = "egress"
-  description              = "Forward requests to node NodePort range (ALB target groups)"
+  description              = "NodePort range egress (target-type: instance fallback)"
   from_port                = 30000
   to_port                  = 32767
   protocol                 = "tcp"

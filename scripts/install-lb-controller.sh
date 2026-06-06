@@ -40,6 +40,11 @@ CERT_ARN=$(terraform -chdir="$TF_DIR" output -raw certificate_arn)
 CLUSTER_NAME=$(terraform -chdir="$TF_DIR" output -raw cluster_name)
 ALB_SG_ID=$(terraform -chdir="$TF_DIR" output -raw alb_sg_id)
 
+[[ -z "$ROLE_ARN" ]]     && { echo "ERROR: lb_controller_role_arn output is empty — run terraform apply first"; exit 1; }
+[[ -z "$CERT_ARN" ]]    && { echo "ERROR: certificate_arn output is empty — run terraform apply first"; exit 1; }
+[[ -z "$CLUSTER_NAME" ]] && { echo "ERROR: cluster_name output is empty — run terraform apply first"; exit 1; }
+[[ -z "$ALB_SG_ID" ]]   && { echo "ERROR: alb_sg_id output is empty — run terraform apply first"; exit 1; }
+
 echo "  Cluster:      $CLUSTER_NAME"
 echo "  LB role ARN:  $ROLE_ARN"
 echo "  Cert ARN:     $CERT_ARN"
