@@ -139,10 +139,6 @@ resource "aws_security_group" "alb" {
   tags = merge(local.base_tags, {
     Name = "${var.project}-${var.environment}-alb-sg"
   })
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 # ── EKS Cluster SG Rules ──────────────────────────────────────────────────────
