@@ -5,7 +5,7 @@
 #   - kubectl configured for the target cluster (run: aws eks update-kubeconfig --name petclinic-{env} --region eu-central-1)
 #   - helm installed (>= 3.x)
 #   - terraform apply completed for the target environment (IRSA role + cert must exist)
-#   - DNS delegated: domain registrar NS records pointing to Route 53
+#   - CLOUDFLARE_API_TOKEN exported in your shell (Zone:Read + DNS:Edit permissions on praty.dev)
 #
 # Usage:
 #   ./scripts/install-lb-controller.sh --env dev

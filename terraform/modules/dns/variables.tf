@@ -1,5 +1,5 @@
 variable "domain_name" {
-  description = "Domain name for the Route 53 hosted zone (e.g., example.com). Supply your own domain — no default. Anyone with any domain from any registrar can use this module."
+  description = "Domain name managed in Cloudflare DNS (e.g., example.com). The Cloudflare zone is looked up by name — the domain must already exist in your Cloudflare account. Requires CLOUDFLARE_API_TOKEN env var."
   type        = string
 
   validation {

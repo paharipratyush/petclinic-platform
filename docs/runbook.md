@@ -1,6 +1,6 @@
 # Petclinic Platform — Operations Runbook
 
-**Last Updated:** 2026-06-06
+**Last Updated:** 2026-06-07
 **Purpose:** Step-by-step procedures for common operational tasks on the petclinic-platform infrastructure. Each procedure is self-contained and includes verification and rollback steps.
 
 ## Table of Contents
@@ -12,9 +12,9 @@
 5. [RDS: Database Initialization Strategy](#rds-database-initialization-strategy)
 6. [RDS: Retrieve Credentials from Secrets Manager](#rds-retrieve-credentials-from-secrets-manager)
 7. [RDS: Free-Tier Backup Retention Deviation](#rds-free-tier-backup-retention-deviation)
-8. [DNS: Delegate Domain to Route 53](#dns-delegate-domain-to-route-53)
+8. [DNS: Set CLOUDFLARE_API_TOKEN Before Applying](#dns-set-cloudflare_api_token-before-applying)
 9. [DNS: Install AWS Load Balancer Controller and Apply Ingress](#dns-install-aws-load-balancer-controller-and-apply-ingress)
-10. [DNS: Create Route 53 A Record After ALB Provisioning](#dns-create-route-53-a-record-after-alb-provisioning)
+10. [DNS: Create Cloudflare CNAME After ALB Provisioning](#dns-create-cloudflare-cname-after-alb-provisioning)
 
 ---
 
@@ -396,59 +396,48 @@ If the AWS account is upgraded from free tier, re-enable automated backups by ch
 
 ---
 
-## DNS: Delegate Domain to Route 53
+## DNS: Set CLOUDFLARE_API_TOKEN Before Applying
 
 **Related stories:** PETPLAT-28, PETPLAT-32
 
 ### Overview
 
-The DNS module creates a Route 53 hosted zone and an ACM wildcard certificate (`*.{domain}`) with DNS validation. The ACM certificate cannot be issued until Route 53 is authoritative for your domain — which requires updating your registrar's nameservers.
+DNS records for `praty.dev` are managed by the **Cloudflare Terraform provider** — there is no manual registrar step, no NS delegation, and no waiting for propagation. The provider creates ACM validation CNAMEs and the app subdomain CNAME directly in Cloudflare via API. See [ADR-0004](adr/0004-cloudflare-provider-for-dns.md) for the rationale.
 
-**When:** After the first `terraform apply` for the target environment. Do this before running `install-lb-controller.sh`.
+Every `terraform plan` and `terraform apply` that touches the DNS module or the app CNAME requires `CLOUDFLARE_API_TOKEN` to be set in the shell environment. The token is **never stored in code or state**.
 
-**Who:** Domain registrar admin access (Cloudflare dashboard, Route 53 console, etc.) + Terraform access
+**When:** Before any `terraform plan` or `terraform apply` for an environment that includes the DNS module.
 
-**Time:** ~5 minutes to update NS records + 5–30 minutes for DNS propagation + ACM certificate issuance
+**Who:** Operator with Cloudflare API token access
+
+**Time:** ~1 minute
+
+### Procedure: Obtain and set the Cloudflare API token
 
 **Steps:**
 
-1. Run `terraform apply` for the target environment. The apply will block at `aws_acm_certificate_validation` until the certificate is issued:
+1. Generate a token at [Cloudflare Dashboard → My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens):
+   - Use the **"Edit zone DNS"** template
+   - Scope it to the specific zone (`praty.dev`)
+   - Permissions needed: `Zone:Read` + `DNS:Edit`
+
+2. Export the token in your shell before running Terraform:
+   ```bash
+   export CLOUDFLARE_API_TOKEN="<your-token>"
+   ```
+
+3. Then run Terraform as normal:
    ```bash
    cd terraform/environments/dev
-   terraform plan -var="domain_name=example.com" -out plan.out
+   terraform plan -var="domain_name=praty.dev" -out plan.out
    terraform apply plan.out
    ```
-   Leave this running. Open a second terminal for the next steps.
-
-2. Get the Route 53 nameservers from the Terraform output:
-   ```bash
-   terraform -chdir=terraform/environments/dev output dns_name_servers
-   ```
-   You will see 4 NS records like:
-   ```
-   [
-     "ns-1234.awsdns-56.com.",
-     "ns-789.awsdns-01.co.uk.",
-     "ns-012.awsdns-34.net.",
-     "ns-567.awsdns-89.org.",
-   ]
-   ```
-
-3. Update your domain registrar with these nameservers:
-   - **Cloudflare registrar:** Dashboard → your domain → DNS → Nameservers → Custom → paste all 4 NS records (without trailing dot)
-   - **Route 53 registrar:** Dashboard → Registered domains → your domain → Update nameservers
-   - **Other registrar:** DNS Settings / Nameserver Settings → replace existing NS records with the 4 above
-
-4. DNS propagation typically takes 5–30 minutes but can take up to 48 hours. Monitor progress:
-   ```bash
-   # Check if your domain now resolves via Route 53 NS
-   dig NS example.com @8.8.8.8
-   ```
-   Once you see the Route 53 NS records in the response, ACM will validate and the `terraform apply` will complete.
+   The ACM validation CNAME is created in Cloudflare automatically. `aws_acm_certificate_validation` completes within 2–5 minutes with no additional steps.
 
 **Verify:**
 ```bash
-# Confirm certificate is issued
+# Confirm the ACM certificate is ISSUED (the validation CNAME record name is
+# ACM-generated and shown in the AWS console or via describe-certificate below)
 aws acm describe-certificate \
   --certificate-arn "$(terraform -chdir=terraform/environments/dev output -raw certificate_arn)" \
   --region eu-central-1 \
@@ -457,9 +446,10 @@ aws acm describe-certificate \
 # Expected: ISSUED
 ```
 
-**Rollback:**
-- Revert your registrar's nameservers to the previous values to move DNS back to the original provider.
-- The Route 53 hosted zone can be destroyed with `terraform destroy -target=module.dns.aws_route53_zone.main` (requires approval per safety hooks).
+**Token security:**
+- Store the token in a password manager, not in `.bashrc` or `.zshrc`.
+- Rotate the token immediately if it is ever visible in chat, logs, or shell history.
+- A compromised token with `DNS:Edit` scope can modify DNS records for the domain — treat it like a root password.
 
 ---
 
@@ -469,7 +459,7 @@ aws acm describe-certificate \
 
 ### Procedure: Install the AWS Load Balancer Controller and create the ALB
 
-**When:** After `terraform apply` has completed (IRSA role and ACM cert exist) and DNS is delegated to Route 53.
+**When:** After `terraform apply` has completed (IRSA role and ACM cert exist). DNS is managed automatically — no manual delegation step required.
 
 **Who:** kubectl access to the EKS cluster + helm installed
 
@@ -516,21 +506,21 @@ The ALB is deleted when the Ingress resource is deleted.
 
 ---
 
-## DNS: Create Route 53 A Record After ALB Provisioning
+## DNS: Create Cloudflare CNAME After ALB Provisioning
 
 **Related stories:** PETPLAT-31
 
-### Procedure: Point your domain at the ALB
+### Procedure: Point your subdomain at the ALB
 
-**When:** After `install-lb-controller.sh` has run and the Ingress shows an ALB DNS name.
+**When:** After `install-lb-controller.sh` has run and the Ingress shows an ALB DNS hostname.
 
-**Who:** Terraform access to the environment
+**Who:** Terraform access to the environment + `CLOUDFLARE_API_TOKEN` set
 
-**Time:** ~2 minutes (Terraform apply) + DNS propagation (typically instant for Route 53 aliases)
+**Time:** ~2 minutes (Terraform apply) + Cloudflare DNS propagation (typically seconds)
 
 **Steps:**
 
-1. Get the ALB DNS name from the Ingress:
+1. Get the ALB DNS hostname from the Ingress:
    ```bash
    ALB_DNS=$(kubectl get ingress petclinic-ingress -n petclinic-dev \
      -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
@@ -538,34 +528,39 @@ The ALB is deleted when the Ingress resource is deleted.
    # Example: k8s-petclini-a1b2c3d4-1234567890.eu-central-1.elb.amazonaws.com
    ```
 
-2. Plan and apply the Route 53 A record (alias to ALB):
+2. Plan and apply the Cloudflare CNAME record:
    ```bash
+   export CLOUDFLARE_API_TOKEN="<your-token>"
    cd terraform/environments/dev
-   terraform plan -var="domain_name=example.com" -var="alb_dns_name=$ALB_DNS" -out plan.out
+   terraform plan -var="domain_name=praty.dev" -var="alb_dns_name=$ALB_DNS" -out plan.out
    terraform apply plan.out
    ```
-   This creates `petclinic-dev.example.com → ALB` (for dev) or `petclinic.example.com → ALB` (for prod).
+   This creates `petclinic-dev.praty.dev → ALB` (for dev) or `petclinic.praty.dev → ALB` (for prod).
 
-3. For subsequent applies (e.g., to make changes), pass the same variable:
+3. Persist the ALB hostname so future applies don't lose it:
    ```bash
-   terraform plan -var="domain_name=example.com" -var="alb_dns_name=$ALB_DNS" -out plan.out
+   # Add to terraform/environments/dev/terraform.tfvars (gitignored — local only):
+   # alb_dns_name = "k8s-petclini-a1b2c3d4-1234567890.eu-central-1.elb.amazonaws.com"
    ```
-   Or add `alb_dns_name = "..."` to the environment's `terraform.tfvars` (do not commit this file — it may contain other sensitive values).
+   With this set, subsequent `terraform plan` calls don't require the `-var="alb_dns_name=..."` flag.
 
 **Verify:**
 ```bash
-# DNS lookup
-nslookup petclinic-dev.example.com
+# DNS lookup — CNAME chain visible
+nslookup petclinic-dev.praty.dev
 
-# HTTPS access
-curl -I https://petclinic-dev.example.com
-# Expected: HTTP/2 200 (or 302 redirect from api-gateway)
+# HTTP → HTTPS redirect (ALB listener)
+curl -I http://petclinic-dev.praty.dev
+# Expected: HTTP/1.1 301 Moved Permanently → https://petclinic-dev.praty.dev
+
+# HTTPS response (before app services are deployed, expect 404 or 503 from ALB default rule)
+curl -I https://petclinic-dev.praty.dev
 ```
 
-**If HTTP redirects to HTTPS:** This is correct behavior — the ALB listener is configured to redirect port 80 → 443.
-
-**If DNS does not resolve:** Check that NS delegation is still active:
+**If DNS does not resolve:** Confirm the `cloudflare_record.app` resource was created:
 ```bash
-dig NS example.com @8.8.8.8
-# Should show Route 53 nameservers
+cd terraform/environments/dev
+terraform state show 'cloudflare_record.app[0]'
 ```
+
+**If the ALB is recreated** (e.g., after Ingress delete + re-apply), the ALB hostname changes. Repeat step 1–2 with the new hostname and update `terraform.tfvars`.

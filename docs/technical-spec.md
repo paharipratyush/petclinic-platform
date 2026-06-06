@@ -493,21 +493,27 @@ spec:
 
 ## DNS and Ingress
 
+> **Implementation note:** The original design used Route 53 as authoritative DNS. Because the domain (`praty.dev`) is registered via Cloudflare Registrar, which does not support NS delegation to external providers, we use the Cloudflare Terraform provider instead. See [ADR-0004](adr/0004-cloudflare-provider-for-dns.md).
+
 ### ACM Certificate
 
 | Parameter | Value |
 |-----------|-------|
-| Domain | `*.{domain}` (wildcard) |
-| Validation Method | DNS (Route 53) |
+| Domain | `*.{domain}` (wildcard) + `{domain}` (apex SAN) |
+| Validation Method | DNS (Cloudflare provider creates validation CNAME automatically) |
 | Region | `eu-central-1` (same as ALB) |
+| Provider | `cloudflare/cloudflare ~> 4.0` |
+| Auth | `CLOUDFLARE_API_TOKEN` env var (Zone:Read + DNS:Edit permissions) |
 
-### Route 53
+### Cloudflare DNS Records
 
 | Parameter | Value |
 |-----------|-------|
-| Hosted Zone | `{domain}` (provided as variable) |
-| Dev Record | `petclinic-dev.{domain}` → ALB (A record, alias) |
-| Prod Record | `petclinic.{domain}` → ALB (A record, alias) |
+| Zone lookup | `data "cloudflare_zone"` by domain name (no hardcoded zone ID) |
+| ACM validation | `cloudflare_record` CNAME created automatically by Terraform |
+| Dev record | `petclinic-dev.{domain}` → ALB (CNAME, `proxied = false`) |
+| Prod record | `petclinic.{domain}` → ALB (CNAME, `proxied = false`) |
+| Two-stage apply | First apply: cert + IRSA. Second apply (after ALB exists): app CNAME |
 
 ### AWS Load Balancer Controller
 
@@ -1048,7 +1054,7 @@ This is a learning project. Instance choices maximize AWS free tier eligibility.
 | S3 + DynamoDB (state) | $1 | $1 | Mostly free tier |
 | ECR Storage | ~$1 | ~$1 | 500 MB free, then $0.10/GB/month |
 | EBS (PVs — Prometheus, Grafana, Loki) | $2 | $2 | 30 GB gp2 free (12 months) |
-| Route 53 | $1 | $1 | $0.50/zone + queries |
+| Cloudflare DNS | $0 | $0 | Free tier (no hosted zone charge; DNS managed via Cloudflare Terraform provider) |
 | Secrets Manager | $1 | $1 | $0.40/secret/month (~3 secrets) |
 | Data Transfer | $1 | $1 | 100 GB/mo free |
 | **Total** | **~$80/mo** | **~$80/mo** | EKS control plane is the main cost |
@@ -1238,9 +1244,8 @@ Uses `aws_ecr_repository` with lifecycle policies, scan-on-push, and configurabl
 
 | Output | Type | Description |
 |--------|------|-------------|
-| `zone_id` | string | Route 53 hosted zone ID |
-| `name_servers` | list(string) | NS records for delegation |
-| `certificate_arn` | string | ACM certificate ARN |
+| `cloudflare_zone_id` | string | Cloudflare zone ID (used by env root modules to create app CNAME) |
+| `certificate_arn` | string | ACM certificate ARN (validated via Cloudflare DNS) |
 
 ### Module: `secrets`
 

@@ -17,7 +17,7 @@ variable "project" {
 }
 
 variable "domain_name" {
-  description = "Base domain name for Route 53 hosted zone and ACM certificate (e.g., example.com). Supply your own domain — no default."
+  description = "Base domain name managed in Cloudflare DNS (e.g., example.com). Used for ACM certificate and Cloudflare CNAME records. Supply your own domain — no default."
   type        = string
 }
 
