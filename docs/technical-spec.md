@@ -1160,7 +1160,7 @@ No NAT Gateway cost ($0 saved vs ~$35-65/mo with NAT).
 | `cluster_sg_id` | string | Cluster security group ID | — |
 | `node_sg_id` | string | Node security group ID | — |
 | `node_instance_types` | list(string) | Instance types for nodes | `["t4g.small"]` |
-| `node_ami_type` | string | AMI type for nodes | `"AL2_ARM_64"` |
+| `node_ami_type` | string | AMI type for nodes | `"AL2023_ARM_64_STANDARD"` |
 | `node_min_size` | number | Min node count | `2` |
 | `node_max_size` | number | Max node count | `4` |
 | `node_desired_size` | number | Desired node count | `2` |
