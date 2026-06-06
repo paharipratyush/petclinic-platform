@@ -89,6 +89,17 @@ variable "deletion_protection" {
   default     = false
 }
 
+variable "secret_recovery_window_in_days" {
+  description = "Days Secrets Manager waits before permanently deleting the RDS credentials secret. Use 0 for dev (force delete — allows same-day destroy+recreate), 30 for prod. Valid: 0 or 7–30."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.secret_recovery_window_in_days == 0 || (var.secret_recovery_window_in_days >= 7 && var.secret_recovery_window_in_days <= 30)
+    error_message = "secret_recovery_window_in_days must be 0 (force delete) or between 7 and 30."
+  }
+}
+
 variable "tags" {
   description = "Additional tags to merge with default resource tags"
   type        = map(string)

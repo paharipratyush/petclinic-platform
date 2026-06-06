@@ -16,13 +16,13 @@ variable "openai_api_key" {
 }
 
 variable "recovery_window_in_days" {
-  description = "Number of days Secrets Manager waits before permanently deleting a secret. Use 7 for dev (faster destroy cycles), 30 for prod (disaster recovery compliance)."
+  description = "Days Secrets Manager waits before permanently deleting a secret. Use 0 for dev (force delete — allows same-day destroy+recreate), 30 for prod (disaster recovery compliance). Valid: 0 or 7–30."
   type        = number
   default     = 30
 
   validation {
-    condition     = var.recovery_window_in_days >= 7 && var.recovery_window_in_days <= 30
-    error_message = "recovery_window_in_days must be between 7 and 30."
+    condition     = var.recovery_window_in_days == 0 || (var.recovery_window_in_days >= 7 && var.recovery_window_in_days <= 30)
+    error_message = "recovery_window_in_days must be 0 (force delete) or between 7 and 30."
   }
 }
 

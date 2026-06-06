@@ -52,6 +52,10 @@ module "rds" {
   multi_az                = false
   skip_final_snapshot     = true
   backup_retention_period = 0 # free-tier accounts do not support automated backups (>0 returns FreeTierRestrictionError)
+
+  # 0 = force delete on destroy — allows same-day destroy + recreate without hitting the
+  # Secrets Manager name reservation window
+  secret_recovery_window_in_days = 0
 }
 
 module "eks" {
@@ -387,7 +391,7 @@ module "secrets" {
   project                  = var.project
   environment              = var.environment
   openai_api_key           = var.openai_api_key
-  recovery_window_in_days  = 7
+  recovery_window_in_days  = 0
 
   tags = {
     Component = "secrets"

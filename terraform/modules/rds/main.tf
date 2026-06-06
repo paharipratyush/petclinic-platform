@@ -26,8 +26,9 @@ resource "random_password" "master" {
 # Name follows forward-slash convention: petclinic/{env}/rds-credentials
 
 resource "aws_secretsmanager_secret" "rds_credentials" {
-  name        = "petclinic/${var.environment}/rds-credentials"
-  description = "RDS MySQL master credentials for petclinic-${var.environment}"
+  name                    = "petclinic/${var.environment}/rds-credentials"
+  description             = "RDS MySQL master credentials for petclinic-${var.environment}"
+  recovery_window_in_days = var.secret_recovery_window_in_days
 
   tags = merge(local.base_tags, { Name = "petclinic/${var.environment}/rds-credentials" })
 }
