@@ -38,6 +38,22 @@ module "ecr" {
   tag_mutability = "MUTABLE"
 }
 
+module "rds" {
+  source = "../../modules/rds"
+
+  project     = var.project
+  environment = var.environment
+
+  subnet_ids        = module.vpc.public_subnet_ids
+  security_group_id = module.vpc.rds_sg_id
+
+  # db.t4g.micro (ARM/Graviton) — RDS free tier eligible (750 hrs/month, 12 months)
+  instance_class          = "db.t4g.micro"
+  multi_az                = false
+  skip_final_snapshot     = true
+  backup_retention_period = 0 # free-tier accounts do not support automated backups (>0 returns FreeTierRestrictionError)
+}
+
 module "eks" {
   source = "../../modules/eks"
 

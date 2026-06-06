@@ -39,6 +39,23 @@ module "ecr" {
   tag_mutability = "IMMUTABLE"
 }
 
+module "rds" {
+  source = "../../modules/rds"
+
+  project     = var.project
+  environment = var.environment
+
+  subnet_ids        = module.vpc.public_subnet_ids
+  security_group_id = module.vpc.rds_sg_id
+
+  # db.t4g.micro (ARM/Graviton) — RDS free tier eligible (750 hrs/month, 12 months)
+  # Note: in real production use db.r7g.large with Multi-AZ, gp3 storage, deletion_protection=true
+  instance_class          = "db.t4g.micro"
+  multi_az                = false
+  skip_final_snapshot     = false
+  backup_retention_period = 30
+}
+
 module "eks" {
   source = "../../modules/eks"
 

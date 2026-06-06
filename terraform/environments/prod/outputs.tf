@@ -88,3 +88,36 @@ output "ecr_repository_arns" {
   description = "Map of service name to ECR repository ARN (used for IAM push policies in E-10)"
   value       = module.ecr.repository_arns
 }
+
+output "rds_endpoint" {
+  description = "RDS MySQL hostname (use in JDBC URL: jdbc:mysql://{endpoint}:3306/petclinic)"
+  value       = module.rds.endpoint
+  sensitive   = true
+}
+
+output "rds_port" {
+  description = "RDS MySQL port"
+  value       = module.rds.port
+}
+
+output "rds_db_instance_id" {
+  description = "RDS instance identifier"
+  value       = module.rds.db_instance_id
+}
+
+output "rds_secret_arn" {
+  description = "Secrets Manager ARN for RDS credentials (used by External Secrets Operator)"
+  value       = module.rds.secret_arn
+  sensitive   = true
+}
+
+output "rds_secret_name" {
+  description = "Secrets Manager secret name for RDS credentials"
+  value       = module.rds.secret_name
+  sensitive   = true
+}
+
+output "rds_db_name" {
+  description = "Database name on the RDS instance (used in K8s ConfigMaps and JDBC URLs)"
+  value       = module.rds.db_name
+}
