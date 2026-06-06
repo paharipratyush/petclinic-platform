@@ -22,7 +22,7 @@ variable "domain_name" {
 }
 
 variable "alb_dns_name" {
-  description = "DNS name of the ALB created by the Load Balancer Controller (e.g., k8s-petclini-xxxx.eu-central-1.elb.amazonaws.com). Leave empty on first apply; populate after the Ingress creates the ALB and then re-apply to create the Route 53 A record."
+  description = "DNS name of the ALB created by the Load Balancer Controller (e.g., k8s-petclinic-xxxx.eu-central-1.elb.amazonaws.com). Leave empty on first apply; populate after the Ingress creates the ALB and re-apply to create the Cloudflare CNAME."
   type        = string
   default     = ""
 }

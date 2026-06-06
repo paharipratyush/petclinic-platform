@@ -377,24 +377,18 @@ resource "aws_iam_role_policy_attachment" "lb_controller" {
   policy_arn = aws_iam_policy.lb_controller.arn
 }
 
-# ------- E-6: Route 53 A record for API Gateway (PETPLAT-31) -------
+# ------- E-6: App DNS record in Cloudflare (PETPLAT-31) -------
 # Leave alb_dns_name empty on first apply.
-# After `kubectl apply -f k8s/base/ingress/ingress.yaml` creates the ALB,
-# get its DNS name and set var.alb_dns_name, then re-apply.
-# Prod subdomain: petclinic.{domain} (no environment suffix, as agreed)
+# After scripts/install-lb-controller.sh creates the ALB, set var.alb_dns_name
+# and re-apply to create the Cloudflare CNAME pointing petclinic.{domain} → ALB.
 
-data "aws_elb_hosted_zone_id" "alb" {}
-
-resource "aws_route53_record" "app" {
+resource "cloudflare_record" "app" {
   count = var.alb_dns_name != "" ? 1 : 0
 
-  zone_id = module.dns.zone_id
-  name    = "petclinic.${var.domain_name}"
-  type    = "A"
-
-  alias {
-    name                   = var.alb_dns_name
-    zone_id                = data.aws_elb_hosted_zone_id.alb.id
-    evaluate_target_health = true
-  }
+  zone_id = module.dns.cloudflare_zone_id
+  name    = "petclinic"
+  content = var.alb_dns_name
+  type    = "CNAME"
+  ttl     = 1
+  proxied = false
 }
