@@ -15,6 +15,7 @@
 8. [DNS: Set CLOUDFLARE_API_TOKEN Before Applying](#dns-set-cloudflare_api_token-before-applying)
 9. [DNS: Install AWS Load Balancer Controller and Apply Ingress](#dns-install-aws-load-balancer-controller-and-apply-ingress)
 10. [DNS: Create Cloudflare CNAME After ALB Provisioning](#dns-create-cloudflare-cname-after-alb-provisioning)
+11. [Infrastructure: Safe Teardown Before terraform destroy](#infrastructure-safe-teardown-before-terraform-destroy)
 
 ---
 
@@ -561,6 +562,65 @@ curl -I https://petclinic-dev.praty.dev
 ```bash
 cd terraform/environments/dev
 terraform state show 'cloudflare_record.app[0]'
+```
+
+---
+
+## Infrastructure: Safe Teardown Before terraform destroy
+
+**Related stories:** PETPLAT-29 (LB Controller), PETPLAT-30 (Ingress)
+
+### Overview
+
+Running `terraform destroy` directly while an Ingress exists will fail with dependency violations. The ALB is created by the AWS Load Balancer Controller (a Kubernetes operator) — not by Terraform. Terraform has no state entry for it and cannot delete it. The ALB holds references to the ACM certificate, subnets, security group, and IGW, which causes a cascade of `DependencyViolation` and `ResourceInUseException` errors.
+
+**ECR is not a concern**: `force_delete = true` is set in the ECR module. Terraform destroy succeeds even when repositories contain images.
+
+### Procedure: Tear down all infrastructure safely
+
+**When:** Before running `terraform destroy` on any environment that has had the Ingress applied.
+
+**Who:** `kubectl` access to the cluster + AWS CLI access to eu-central-1
+
+**Time:** ~3 minutes (ALB deletion) + however long `terraform destroy` takes (~15 min)
+
+**Steps:**
+
+1. Delete the Kubernetes Ingress — the LB Controller sees this and deletes the ALB automatically:
+   ```bash
+   kubectl delete ingress petclinic-ingress -n petclinic-{env}
+   ```
+
+2. Wait for the LB Controller to delete the ALB (~30–60 seconds), then confirm it is gone:
+   ```bash
+   aws elbv2 describe-load-balancers --region eu-central-1 \
+     --query "LoadBalancers[*].{Name:LoadBalancerName,State:State.Code}" \
+     --output table
+   # Expected: no rows (or only unrelated load balancers)
+   ```
+
+3. Run `terraform destroy`:
+   ```bash
+   cd terraform/environments/{env}
+   terraform destroy
+   ```
+   All resources should now delete cleanly. If any Secrets Manager deletion fails due to a recovery window, the `recovery_window_in_days = 0` setting on dev ensures force-deletion.
+
+**Why the ALB must be deleted first:** Terraform never created the ALB — the LB Controller did. Terraform cannot destroy what it doesn't manage. Deleting the Ingress delegates the cleanup back to the same controller that created the ALB, which is the correct and safe path.
+
+**Rollback / if you skipped step 1:**
+If `terraform destroy` fails with `DependencyViolation` or `ResourceInUseException`, the ALB is still alive. Find and delete it manually:
+```bash
+# Find the orphaned ALB
+aws elbv2 describe-load-balancers --region eu-central-1 \
+  --query "LoadBalancers[?contains(LoadBalancerName,'petclini')].LoadBalancerArn" \
+  --output text
+
+# Delete it
+aws elbv2 delete-load-balancer --region eu-central-1 \
+  --load-balancer-arn <arn-from-above>
+
+# Wait ~30 seconds, then retry terraform destroy
 ```
 
 **If the ALB is recreated** (e.g., after Ingress delete + re-apply), the ALB hostname changes. Repeat step 1–2 with the new hostname and update `terraform.tfvars`.
