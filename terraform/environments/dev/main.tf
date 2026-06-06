@@ -17,6 +17,27 @@ module "vpc" {
   ]
 }
 
+module "ecr" {
+  source = "../../modules/ecr"
+
+  project     = var.project
+  environment = var.environment
+
+  service_names = [
+    "config-server",
+    "discovery-server",
+    "api-gateway",
+    "customers-service",
+    "visits-service",
+    "vets-service",
+    "genai-service",
+    "admin-server",
+  ]
+
+  # MUTABLE in dev — allows re-pushing the same tag during development
+  tag_mutability = "MUTABLE"
+}
+
 module "eks" {
   source = "../../modules/eks"
 

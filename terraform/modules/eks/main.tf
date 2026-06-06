@@ -138,6 +138,7 @@ resource "aws_launch_template" "node" {
     ebs {
       volume_size           = var.node_disk_size
       volume_type           = "gp2"
+      encrypted             = true
       delete_on_termination = true
     }
   }

@@ -17,6 +17,28 @@ module "vpc" {
   ]
 }
 
+module "ecr" {
+  source = "../../modules/ecr"
+
+  project     = var.project
+  environment = var.environment
+
+  service_names = [
+    "config-server",
+    "discovery-server",
+    "api-gateway",
+    "customers-service",
+    "visits-service",
+    "vets-service",
+    "genai-service",
+    "admin-server",
+  ]
+
+  # IMMUTABLE in prod — deployed image tags cannot be overwritten, ensuring
+  # what was tested is exactly what runs
+  tag_mutability = "IMMUTABLE"
+}
+
 module "eks" {
   source = "../../modules/eks"
 

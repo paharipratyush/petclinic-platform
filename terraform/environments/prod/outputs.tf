@@ -73,3 +73,18 @@ output "kubeconfig_command" {
   description = "Command to configure kubectl for this cluster"
   value       = module.eks.kubeconfig_command
 }
+
+output "ecr_registry_url" {
+  description = "ECR registry base URL for docker login and image tagging"
+  value       = module.ecr.registry_url
+}
+
+output "ecr_repository_urls" {
+  description = "Map of service name to full ECR repository URL"
+  value       = module.ecr.repository_urls
+}
+
+output "ecr_repository_arns" {
+  description = "Map of service name to ECR repository ARN (used for IAM push policies in E-10)"
+  value       = module.ecr.repository_arns
+}

@@ -7,26 +7,36 @@ variable "project" {
 variable "environment" {
   description = "Environment (dev or prod)"
   type        = string
+
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment must be 'dev' or 'prod'."
+  }
 }
 
 variable "service_names" {
-  description = "List of service names — one ECR repo is created per service"
+  description = "List of microservice names to create ECR repositories for (lowercase alphanumeric, hyphens, underscores)"
   type        = list(string)
-}
-
-variable "image_tag_mutability" {
-  description = "Tag mutability: MUTABLE for dev (allows re-push), IMMUTABLE for prod"
-  type        = string
-  default     = "MUTABLE"
 
   validation {
-    condition     = contains(["MUTABLE", "IMMUTABLE"], var.image_tag_mutability)
-    error_message = "image_tag_mutability must be MUTABLE or IMMUTABLE."
+    condition     = length(var.service_names) > 0 && alltrue([for n in var.service_names : can(regex("^[a-z0-9][a-z0-9_-]*$", n))])
+    error_message = "service_names must be non-empty; each name must be lowercase alphanumeric and may contain hyphens or underscores."
+  }
+}
+
+variable "tag_mutability" {
+  description = "Image tag mutability: MUTABLE for dev (re-push same tag), IMMUTABLE for prod (tags cannot be overwritten)"
+  type        = string
+  default     = "IMMUTABLE"
+
+  validation {
+    condition     = contains(["MUTABLE", "IMMUTABLE"], var.tag_mutability)
+    error_message = "tag_mutability must be 'MUTABLE' or 'IMMUTABLE'."
   }
 }
 
 variable "tags" {
-  description = "Additional tags to merge with default tags"
+  description = "Additional tags to merge with default resource tags"
   type        = map(string)
   default     = {}
 }
