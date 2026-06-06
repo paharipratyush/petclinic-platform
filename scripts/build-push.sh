@@ -19,9 +19,9 @@
 #   --registry   Override ECR registry URL (default: auto-detected from AWS account)
 set -euo pipefail
 
-# Clean up the buildx builder on exit (normal or error) so it does not
-# accumulate across runs on developer workstations
-cleanup() { docker buildx rm petclinic-builder 2>/dev/null || true; }
+# Clean up a created petclinic-builder on exit. No-op when using desktop-linux
+# (Docker Desktop manages that builder's lifecycle).
+cleanup() { [[ "${BUILDX_BUILDER:-}" == "petclinic-builder" ]] && docker buildx rm petclinic-builder 2>/dev/null || true; }
 trap cleanup EXIT
 
 APP_REPO=""
@@ -75,14 +75,24 @@ cd "${APP_REPO}"
 echo "Maven build complete"
 
 # ── Step 2: Set up Docker Buildx for ARM64 ───────────────────────────────────
+# On Linux/CI: create a dedicated docker-container builder (supports --push natively).
+# On Docker Desktop for Windows: use the pre-existing desktop-linux builder which
+# supports linux/arm64 via QEMU (docker-container driver fails from Git Bash due to
+# WSL2 bind-mount path translation issues).
 echo ""
 echo "=== [2/4] Setting up Docker Buildx ==="
-if ! docker buildx inspect petclinic-builder &>/dev/null; then
-  docker buildx create --name petclinic-builder --use
-else
+if docker buildx inspect desktop-linux &>/dev/null; then
+  # Docker Desktop for Windows — use the managed builder
+  BUILDX_BUILDER="desktop-linux"
+  docker buildx use desktop-linux
+elif docker buildx inspect petclinic-builder &>/dev/null; then
+  BUILDX_BUILDER="petclinic-builder"
   docker buildx use petclinic-builder
+else
+  docker buildx create --name petclinic-builder --use
+  BUILDX_BUILDER="petclinic-builder"
 fi
-echo "Buildx builder: petclinic-builder (linux/arm64)"
+echo "Buildx builder: ${BUILDX_BUILDER} (linux/arm64)"
 
 # ── Step 3: ECR Login ─────────────────────────────────────────────────────────
 echo ""
@@ -119,6 +129,7 @@ for ENTRY in "${SERVICES[@]}"; do
   echo "    Port     : ${PORT}"
   echo "    Image    : ${ECR_IMAGE}"
 
+  # Build context is target/ — Dockerfile does COPY ${ARTIFACT_NAME}.jar from context root
   docker buildx build \
     --platform linux/arm64 \
     --build-arg ARTIFACT_NAME="${ARTIFACT_NAME}" \
@@ -126,7 +137,7 @@ for ENTRY in "${SERVICES[@]}"; do
     --tag "${ECR_IMAGE}" \
     --file "${DOCKERFILE}" \
     --push \
-    "${APP_REPO}/${MODULE}"
+    "${APP_REPO}/${MODULE}/target"
 
   echo "    Pushed ✓"
 done
