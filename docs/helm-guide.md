@@ -39,13 +39,13 @@ All keys are defined here with sensible defaults. Per-service and env files over
 
 | Key | Purpose |
 |-----|---------|
-| `image.name` | ECR image name (e.g., `config-server`). Registry comes from env file. |
-| `image.tag` | Image tag. CI updates this on every push. Default: `placeholder` |
+| `image.name` | Image name. Currently full Docker Hub path (e.g., `springcommunity/spring-petclinic-config-server`). See [Image Registry Migration](#image-registry-migration). |
+| `image.tag` | Image tag. Default: `latest`. CI updates this on every push (PETPLAT-85). |
 | `service.port` | Container port |
 | `component` | `app.kubernetes.io/component` label value |
-| `replicaCount` | **Prod** replica count. dev.yaml overrides to 1. |
-| `autoscaling.*` | HPA settings (enabled, min, max, CPU target). dev.yaml disables. |
-| `podDisruptionBudget.*` | PDB settings. dev.yaml disables. |
+| `replicaCount` | **Prod** replica count. `dev.yaml` overrides to 1. |
+| `autoscaling.*` | HPA settings (enabled, min, max, CPU target). `dev.yaml` disables. |
+| `podDisruptionBudget.*` | PDB settings. `dev.yaml` disables. |
 | `resources.*` | CPU/memory requests and limits (override only if different from default) |
 | `config` | Map of env vars injected via ConfigMap |
 | `initContainers` | Init container list (wait-for-config-server, wait-for-discovery-server) |
@@ -55,23 +55,34 @@ All keys are defined here with sensible defaults. Per-service and env files over
 ### helm-values/{env}.yaml — per-environment overrides
 
 **dev.yaml** — always overrides:
-- `image.registry` → ECR petclinic-dev path
+- `image.registry: ""` — empty; `image.name` holds the full Docker Hub path (see [Image Registry Migration](#image-registry-migration))
 - `replicaCount: 1`
 - `autoscaling.enabled: false`
 - `podDisruptionBudget.enabled: false`
+- `config.SPRING_DATASOURCE_URL` — dev RDS endpoint
 
 **prod.yaml** — only sets:
 - `image.registry` → ECR petclinic-prod path
+- `config.SPRING_DATASOURCE_URL` — prod RDS endpoint (update after E-5 prod RDS apply)
 - Per-service replica counts, HPA, and PDB come from the per-service values file.
+
+## Image Registry Migration
+
+**Current state (pre-CI/CD):** `image.registry` is empty in dev.yaml. `image.name` in each per-service file holds the full Docker Hub path (e.g., `springcommunity/spring-petclinic-api-gateway`). The image helper in `_helpers.tpl` renders `{name}:{tag}` when registry is empty.
+
+**After CI/CD is built (PETPLAT-85):**
+1. Set `image.registry` in `dev.yaml` to the ECR dev path (`{account}.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev`)
+2. Revert each per-service `image.name` to just the service name (e.g., `api-gateway`)
+3. The image helper will then render `{registry}/{name}:{tag}`
 
 ## Probe Paths
 
 | Probe | Path | Notes |
 |-------|------|-------|
-| Startup | `/actuator/health` | All services — disabled liveness/readiness until Spring boots |
+| Startup | `/actuator/health` | All services — gates liveness/readiness until Spring boots |
 | Readiness | `/actuator/health/readiness` | All services except config-server |
 | Liveness | `/actuator/health/liveness` | All services except config-server |
-| config-server | `/actuator/health` | All three probes use the same path |
+| config-server | `/actuator/health` | All three probes use the same path (no readiness/liveness endpoints) |
 
 ## Deploying a Service (Manual)
 
@@ -97,16 +108,14 @@ helm upgrade --install api-gateway helm/petclinic-service/ \
 # Render a specific service to stdout
 helm template customers-service helm/petclinic-service/ \
   -f helm-values/customers-service.yaml \
-  -f helm-values/dev.yaml \
-  --set image.tag=test
+  -f helm-values/dev.yaml
 
 # Dry-run against the cluster
 helm template customers-service helm/petclinic-service/ \
   --namespace petclinic-dev \
   -f helm-values/customers-service.yaml \
   -f helm-values/dev.yaml \
-  --set image.tag=test \
-  | kubectl apply --dry-run=client -f -
+  | kubectl apply --dry-run=client --validate=false -f -
 ```
 
 ## Validating All 16 Releases
@@ -124,21 +133,24 @@ Each ArgoCD Application (in `k8s/argocd/applications/{env}/`) points to the char
 ```yaml
 spec:
   source:
-    repoURL: https://github.com/your-org/petclinic-platform
-    targetRevision: HEAD
+    repoURL: https://github.com/paharipratyush/petclinic-platform.git
+    targetRevision: main
     path: helm/petclinic-service
     helm:
+      releaseName: customers-service
       valueFiles:
         - ../../helm-values/customers-service.yaml
         - ../../helm-values/dev.yaml
 ```
+
+`releaseName` must match the Helm release name used during initial `helm install` so that rendered resource names (e.g., `customers-service`) remain stable. ArgoCD uses the Application name (`customers-service-dev`) as the release name by default — `releaseName` overrides this.
 
 CI updates `image.tag` in `helm-values/{service}.yaml` after every push. ArgoCD detects the commit and syncs (auto in dev, manual in prod).
 
 ## Adding a New Service
 
 1. Create `helm-values/{new-service}.yaml` — set `image.name`, `service.port`, `config`, `initContainers`, `secrets`
-2. Confirm `replicaCount`, `autoscaling`, and `podDisruptionBudget` are appropriate
+2. Set `replicaCount`, `autoscaling`, and `podDisruptionBudget` for prod defaults
 3. Run `bash scripts/validate-helm.sh --service {new-service}`
 4. Create ArgoCD Application CRDs in `k8s/argocd/applications/{dev,prod}/`
 
@@ -146,7 +158,7 @@ CI updates `image.tag` in `helm-values/{service}.yaml` after every push. ArgoCD 
 
 - **No secrets in values files.** All secret-backed env vars use `secrets:` list → `secretKeyRef` in the Deployment. The actual secrets are in AWS Secrets Manager, synced by External Secrets Operator.
 - **`readOnlyRootFilesystem: false`** — Spring Boot writes temp files and logs; must remain false.
-- **`imagePullPolicy: Always`** — enforced in the chart template, not overridable by values.
+- **`pullPolicy: IfNotPresent`** — default in `values.yaml`. CI always pushes new tags; the tag change triggers a pod rollout, so re-pulling the same tag is unnecessary.
 
 ## HPA and PDB Reference
 

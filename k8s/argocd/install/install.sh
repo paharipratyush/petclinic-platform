@@ -10,7 +10,8 @@ INSTALL_URL="https://raw.githubusercontent.com/argoproj/argo-cd/${VERSION}/manif
 echo "Installing ArgoCD ${VERSION}..."
 
 kubectl apply -f "$SCRIPT_DIR/namespace.yaml"
-kubectl apply -n argocd -f "$INSTALL_URL"
+# Use --server-side to handle large CRD schemas (e.g., applicationsets CRD exceeds client-side limit)
+kubectl apply --server-side -n argocd -f "$INSTALL_URL"
 
 echo "Waiting for ArgoCD deployments to become ready..."
 kubectl wait deployment -n argocd \

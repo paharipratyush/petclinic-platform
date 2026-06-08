@@ -2,5 +2,17 @@
 # Target namespace: petclinic-prod
 # HPA, PDB, and replica counts are per-service in helm-values/{service}.yaml — they encode
 # prod-appropriate defaults. dev.yaml overrides: replicaCount=1, autoscaling/PDB disabled.
-image:
-  registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod"
+
+# TODO(PETPLAT-85): uncomment after CI/CD pipeline pushes images to ECR.
+# Until then, per-service image.name holds the full Docker Hub path (springcommunity/...)
+# and image.registry must remain empty to avoid rendering an invalid ECR+DockerHub composite path.
+# After PETPLAT-85:
+#   1. Set image.registry below to the ECR prod path
+#   2. Revert image.name in each per-service file to the short service name (e.g., "customers-service")
+# image:
+#   registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod"
+
+# RDS datasource URL for MySQL-backed services (customers, visits, vets).
+# TODO(E-5 prod): replace placeholder with actual prod RDS endpoint after prod Terraform is applied.
+config:
+  SPRING_DATASOURCE_URL: "jdbc:mysql://petclinic-prod-mysql.REPLACE_AFTER_PROD_RDS_APPLY.eu-central-1.rds.amazonaws.com:3306/petclinic"

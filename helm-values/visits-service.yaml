@@ -1,6 +1,6 @@
 image:
   name: springcommunity/spring-petclinic-visits-service
-  tag: "latest"
+  tag: "3.4.1"
 
 component: service
 
@@ -23,8 +23,6 @@ podDisruptionBudget:
 config:
   SPRING_PROFILES_ACTIVE: "docker,mysql"
   CONFIG_SERVER_URL: "http://config-server:8888"
-  # Override SPRING_DATASOURCE_URL in env values file for prod
-  SPRING_DATASOURCE_URL: "jdbc:mysql://petclinic-dev-mysql.c1qcu40i4ohf.eu-central-1.rds.amazonaws.com:3306/petclinic"
 
 initContainers:
   - name: wait-for-config-server

@@ -1,6 +1,6 @@
 image:
   name: springcommunity/spring-petclinic-admin-server
-  tag: "latest"
+  tag: "3.4.1"
 
 component: admin
 

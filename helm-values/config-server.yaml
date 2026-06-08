@@ -1,6 +1,6 @@
 image:
   name: springcommunity/spring-petclinic-config-server
-  tag: "latest"
+  tag: "3.4.1"
 
 component: server
 

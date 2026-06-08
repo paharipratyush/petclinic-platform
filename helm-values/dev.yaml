@@ -13,3 +13,8 @@ autoscaling:
 
 podDisruptionBudget:
   enabled: false
+
+# RDS datasource URL for MySQL-backed services (customers, visits, vets).
+# Non-MySQL services ignore this key — it lands in their ConfigMap but Spring never reads it.
+config:
+  SPRING_DATASOURCE_URL: "jdbc:mysql://petclinic-dev-mysql.c1qcu40i4ohf.eu-central-1.rds.amazonaws.com:3306/petclinic"

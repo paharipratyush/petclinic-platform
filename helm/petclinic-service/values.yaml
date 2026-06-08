@@ -11,8 +11,8 @@ updateStrategy:
 image:
   registry: ""
   name: "service-name"
-  tag: "latest"
-  pullPolicy: Always
+  tag: "3.4.1"
+  pullPolicy: IfNotPresent
 
 component: service
 
