@@ -1,6 +1,6 @@
 image:
-  name: discovery-server
-  tag: "placeholder"
+  name: springcommunity/spring-petclinic-discovery-server
+  tag: "latest"
 
 component: server
 

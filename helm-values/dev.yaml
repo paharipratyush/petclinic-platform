@@ -1,6 +1,10 @@
 # Dev environment overrides — merged last, always wins over per-service values
+# Target namespace: petclinic-dev
+# image.registry is empty — per-service image.name holds the full Docker Hub path
+# (springcommunity/spring-petclinic-{service}) until CI/CD pushes to ECR (PETPLAT-85).
+# When ECR images exist: set registry to ECR path; revert image.name to short service names.
 image:
-  registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev"
+  registry: ""
 
 replicaCount: 1
 

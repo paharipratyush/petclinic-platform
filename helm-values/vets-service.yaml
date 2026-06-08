@@ -1,6 +1,6 @@
 image:
-  name: vets-service
-  tag: "placeholder"
+  name: springcommunity/spring-petclinic-vets-service
+  tag: "latest"
 
 component: service
 

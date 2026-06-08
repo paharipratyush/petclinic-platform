@@ -67,13 +67,13 @@ for svc in "${SERVICES[@]}"; do
       continue
     fi
 
-    # 2. Template + dry-run
+    # 2. Template + dry-run (--validate=false avoids OpenAPI download; struct is verified by lint)
     if ! helm template "$svc" "$CHART_DIR" \
       --namespace "$NS" \
       -f "$SVC_VALUES" \
       -f "$ENV_VALUES" \
       --set "image.tag=test" \
-      | kubectl apply --dry-run=client --namespace "$NS" -f - 2>&1; then
+      | kubectl apply --dry-run=client --validate=false --namespace "$NS" -f - 2>&1; then
       echo "FAIL: kubectl dry-run $svc/$env"
       ERRORS=$((ERRORS + 1))
       continue

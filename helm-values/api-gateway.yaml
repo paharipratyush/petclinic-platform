@@ -1,6 +1,6 @@
 image:
-  name: api-gateway
-  tag: "placeholder"
+  name: springcommunity/spring-petclinic-api-gateway
+  tag: "latest"
 
 component: gateway
 

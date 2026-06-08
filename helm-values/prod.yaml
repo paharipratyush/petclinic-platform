@@ -1,4 +1,6 @@
 # Prod environment overrides — merged last, always wins over per-service values
-# HPA, PDB, and replica counts are controlled per-service in helm-values/{service}.yaml
+# Target namespace: petclinic-prod
+# HPA, PDB, and replica counts are per-service in helm-values/{service}.yaml — they encode
+# prod-appropriate defaults. dev.yaml overrides: replicaCount=1, autoscaling/PDB disabled.
 image:
   registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod"

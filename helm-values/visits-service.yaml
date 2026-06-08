@@ -1,6 +1,6 @@
 image:
-  name: visits-service
-  tag: "placeholder"
+  name: springcommunity/spring-petclinic-visits-service
+  tag: "latest"
 
 component: service
 

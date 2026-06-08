@@ -1,6 +1,6 @@
 image:
-  name: config-server
-  tag: "placeholder"
+  name: springcommunity/spring-petclinic-config-server
+  tag: "latest"
 
 component: server
 

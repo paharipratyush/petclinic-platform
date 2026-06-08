@@ -1,6 +1,6 @@
 image:
-  name: admin-server
-  tag: "placeholder"
+  name: springcommunity/spring-petclinic-admin-server
+  tag: "latest"
 
 component: admin
 

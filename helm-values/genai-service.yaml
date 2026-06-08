@@ -1,6 +1,6 @@
 image:
-  name: genai-service
-  tag: "placeholder"
+  name: springcommunity/spring-petclinic-genai-service
+  tag: "latest"
 
 component: service
 
