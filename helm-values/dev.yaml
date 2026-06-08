@@ -1,31 +1,11 @@
-# Dev environment overrides — merged with per-service values by ArgoCD (E-16)
-# All services: 1 replica, no HPA, no PDB
-environment: dev
-namespace: petclinic-dev
+# Dev environment overrides — merged last, always wins over per-service values
+image:
+  registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev"
 
 replicaCount: 1
 
-hpa:
+autoscaling:
   enabled: false
 
-pdb:
+podDisruptionBudget:
   enabled: false
-
-resources:
-  requests:
-    cpu: "100m"
-    memory: "128Mi"
-  limits:
-    cpu: "500m"
-    memory: "512Mi"
-
-# api-gateway overrides (higher CPU)
-services:
-  api-gateway:
-    resources:
-      requests:
-        cpu: "200m"
-        memory: "128Mi"
-      limits:
-        cpu: "1000m"
-        memory: "512Mi"

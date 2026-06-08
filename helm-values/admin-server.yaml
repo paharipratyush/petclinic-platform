@@ -1,0 +1,37 @@
+image:
+  name: admin-server
+  tag: "placeholder"
+
+component: admin
+
+service:
+  port: 9090
+
+# admin-server stays at 1 replica in all envs (Spring Boot Admin is a dashboard, not latency-critical)
+replicaCount: 1
+
+autoscaling:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+config:
+  SPRING_PROFILES_ACTIVE: "docker"
+  CONFIG_SERVER_URL: "http://config-server:8888"
+
+initContainers:
+  - name: wait-for-config-server
+    image: busybox:1.36
+    command:
+      - sh
+      - -c
+      - "until wget -qO- http://config-server:8888/actuator/health; do sleep 5; done"
+  - name: wait-for-discovery-server
+    image: busybox:1.36
+    command:
+      - sh
+      - -c
+      - "until wget -qO- http://discovery-server:8761/actuator/health; do sleep 5; done"
+
+secrets: []

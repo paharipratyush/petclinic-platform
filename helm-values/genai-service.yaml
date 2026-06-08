@@ -1,0 +1,44 @@
+image:
+  name: genai-service
+  tag: "placeholder"
+
+component: service
+
+service:
+  port: 8084
+
+# genai stays at 1 replica (HPA handles scale-out); dev.yaml overrides to 1 anyway
+replicaCount: 1
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+
+# no PDB for genai — minAvailable=1 with replicaCount=1 would block node drain
+podDisruptionBudget:
+  enabled: false
+
+config:
+  SPRING_PROFILES_ACTIVE: "docker,production"
+  CONFIG_SERVER_URL: "http://config-server:8888"
+
+initContainers:
+  - name: wait-for-config-server
+    image: busybox:1.36
+    command:
+      - sh
+      - -c
+      - "until wget -qO- http://config-server:8888/actuator/health; do sleep 5; done"
+  - name: wait-for-discovery-server
+    image: busybox:1.36
+    command:
+      - sh
+      - -c
+      - "until wget -qO- http://discovery-server:8761/actuator/health; do sleep 5; done"
+
+secrets:
+  - name: OPENAI_API_KEY
+    secretName: openai-api-key
+    key: OPENAI_API_KEY
