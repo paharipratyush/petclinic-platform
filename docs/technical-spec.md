@@ -1,5 +1,7 @@
 # Technical Specification — Petclinic Platform
 
+**Last Updated:** 2026-06-08
+
 > **Purpose:** Single source of truth for all infrastructure values. Jira stories reference sections of this document via anchor links. Read the relevant section before implementing any story.
 >
 > **Convention:** Dev environment is built during the course. Prod values are defined here but implementation is a **student assignment** unless noted otherwise.
@@ -447,7 +449,7 @@ RDS credentials are created by the RDS module with `random_password` (16+ chars,
 ### ClusterSecretStore Configuration
 
 ```yaml
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
 metadata:
   name: aws-secrets-manager

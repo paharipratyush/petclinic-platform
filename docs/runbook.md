@@ -1,6 +1,6 @@
 # Petclinic Platform — Operations Runbook
 
-**Last Updated:** 2026-06-07
+**Last Updated:** 2026-06-08
 **Purpose:** Step-by-step procedures for common operational tasks on the petclinic-platform infrastructure. Each procedure is self-contained and includes verification and rollback steps.
 
 ## Table of Contents
@@ -16,6 +16,7 @@
 9. [DNS: Install AWS Load Balancer Controller and Apply Ingress](#dns-install-aws-load-balancer-controller-and-apply-ingress)
 10. [DNS: Create Cloudflare CNAME After ALB Provisioning](#dns-create-cloudflare-cname-after-alb-provisioning)
 11. [Infrastructure: Safe Teardown Before terraform destroy](#infrastructure-safe-teardown-before-terraform-destroy)
+12. [Secrets: Add a New Application Secret](#secrets-add-a-new-application-secret)
 
 ---
 
@@ -624,3 +625,126 @@ aws elbv2 delete-load-balancer --region eu-central-1 \
 ```
 
 **If the ALB is recreated** (e.g., after Ingress delete + re-apply), the ALB hostname changes. Repeat step 1–2 with the new hostname and update `terraform.tfvars`.
+
+---
+
+## Secrets: Add a New Application Secret
+
+**When:** A new service needs a secret (API key, credentials) that is NOT the RDS password or OpenAI key.
+**Who:** Platform engineer with AWS admin access and cluster access.
+**Time:** 10-15 minutes.
+
+**Steps:**
+
+1. **Create the secret in AWS Secrets Manager:**
+
+   ```bash
+   export ENV=dev  # or prod
+   export SECRET_NAME="petclinic/${ENV}/my-new-secret"
+
+   # For a plaintext value (e.g., API key):
+   aws secretsmanager create-secret \
+     --name "${SECRET_NAME}" \
+     --secret-string "your-secret-value-here" \
+     --region eu-central-1
+
+   # For a JSON object (e.g., username + password):
+   aws secretsmanager create-secret \
+     --name "${SECRET_NAME}" \
+     --secret-string '{"key1":"value1","key2":"value2"}' \
+     --region eu-central-1
+   ```
+
+2. **Add `secretsmanager:GetSecretValue` permission to the ESO IAM role:**
+
+   In `terraform/environments/${ENV}/main.tf`, find the `eso_policy_arns` or inline policy for the ESO role and add the new secret ARN:
+
+   ```hcl
+   # In the secrets module or ESO IRSA resource, add to the allowed_secret_arns list:
+   "arn:aws:secretsmanager:eu-central-1:568521409121:secret:petclinic/${ENV}/my-new-secret-*"
+   ```
+
+   Then run:
+   ```bash
+   cd terraform/environments/${ENV}
+   terraform plan -out plan.out
+   terraform apply plan.out
+   ```
+
+3. **Create an `ExternalSecret` manifest** (copy from an existing one):
+
+   ```bash
+   cp k8s/base/external-secrets/openai-api-key.yaml k8s/base/external-secrets/my-new-secret.yaml
+   ```
+
+   Edit the new file:
+   ```yaml
+   apiVersion: external-secrets.io/v1
+   kind: ExternalSecret
+   metadata:
+     name: my-new-secret
+     namespace: petclinic-dev      # petclinic-prod for prod
+     labels:
+       app.kubernetes.io/name: my-new-secret
+       app.kubernetes.io/part-of: petclinic
+       app.kubernetes.io/managed-by: kubectl
+       app.kubernetes.io/component: secrets
+   spec:
+     refreshInterval: 1h
+     secretStoreRef:
+       name: aws-secrets-manager
+       kind: ClusterSecretStore
+     target:
+       name: my-new-secret
+       creationPolicy: Owner
+     data:
+       - secretKey: MY_ENV_VAR_NAME
+         remoteRef:
+           key: petclinic/dev/my-new-secret
+   ```
+
+4. **Apply the ExternalSecret:**
+
+   ```bash
+   kubectl apply -f k8s/base/external-secrets/my-new-secret.yaml
+   ```
+
+5. **Verify the K8s Secret was created:**
+
+   ```bash
+   kubectl get secret my-new-secret -n petclinic-dev
+   # Expected: Opaque secret with the correct number of data keys
+   ```
+
+6. **Reference the secret in the Deployment** (in the service's `deployment.yaml`):
+
+   ```yaml
+   env:
+     - name: MY_ENV_VAR_NAME
+       valueFrom:
+         secretKeyRef:
+           name: my-new-secret
+           key: MY_ENV_VAR_NAME
+   ```
+
+**Verify:**
+```bash
+kubectl get externalsecret -n petclinic-dev
+# STATUS column should show SecretSynced and READY=True within ~30 seconds
+
+kubectl describe secret my-new-secret -n petclinic-dev
+# Shows Data keys (values are redacted)
+```
+
+**Rollback:**
+```bash
+# Delete the ExternalSecret and the K8s Secret it owns:
+kubectl delete externalsecret my-new-secret -n petclinic-dev
+# The K8s Secret is also deleted (creationPolicy: Owner)
+
+# Delete the Secrets Manager secret:
+aws secretsmanager delete-secret \
+  --secret-id "petclinic/dev/my-new-secret" \
+  --force-delete-without-recovery \
+  --region eu-central-1
+```

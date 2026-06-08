@@ -2,9 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: petclinic-ingress
-  # Namespace is environment-specific — apply with:
-  #   kubectl apply -f k8s/base/ingress/ingress.yaml -n petclinic-{env}
-  # Or use scripts/install-lb-controller.sh which handles substitution automatically.
+  namespace: petclinic-dev
   labels:
     app.kubernetes.io/name: petclinic-ingress
     app.kubernetes.io/part-of: petclinic
