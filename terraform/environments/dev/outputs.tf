@@ -147,3 +147,13 @@ output "openai_secret_arn" {
   value       = module.secrets.openai_secret_arn
   sensitive   = true
 }
+
+output "github_actions_role_arn" {
+  description = "GitHub Actions IAM role ARN — set this as AWS_ROLE_ARN in GitHub Secrets on paharipratyush/spring-petclinic-microservices"
+  value       = module.github_oidc.role_arn
+}
+
+output "github_oidc_provider_arn" {
+  description = "GitHub Actions OIDC identity provider ARN"
+  value       = module.github_oidc.oidc_provider_arn
+}

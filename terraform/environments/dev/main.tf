@@ -388,10 +388,10 @@ data "aws_caller_identity" "current" {}
 module "secrets" {
   source = "../../modules/secrets"
 
-  project                  = var.project
-  environment              = var.environment
-  openai_api_key           = var.openai_api_key
-  recovery_window_in_days  = 0
+  project                 = var.project
+  environment             = var.environment
+  openai_api_key          = var.openai_api_key
+  recovery_window_in_days = 0
 
   tags = {
     Component = "secrets"
@@ -477,4 +477,20 @@ resource "cloudflare_record" "app" {
   type    = "CNAME"
   ttl     = 1
   proxied = false
+}
+
+# ------- E-10: GitHub OIDC federation for CI (PETPLAT-52) -------
+# Creates the GitHub Actions OIDC identity provider and IAM role that allows
+# the app repo's build workflow to push images to ECR without long-lived credentials.
+# Trust policy is scoped to paharipratyush/spring-petclinic-microservices:main only.
+
+module "github_oidc" {
+  source = "../../modules/github-oidc"
+
+  project     = var.project
+  github_repo = "paharipratyush/spring-petclinic-microservices"
+
+  tags = {
+    Component = "cicd"
+  }
 }
