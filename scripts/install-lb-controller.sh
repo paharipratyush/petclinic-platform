@@ -87,7 +87,11 @@ echo "==> Step 4 — Verify IngressClass 'alb' exists..."
 kubectl get ingressclass alb
 
 echo ""
-echo "==> Step 5 — Apply Ingress manifest to $NAMESPACE with cert ARN substituted..."
+echo "==> Step 5 — Ensure petclinic namespaces exist..."
+kubectl apply -f "$REPO_ROOT/k8s/base/namespaces/namespaces.yaml"
+
+echo ""
+echo "==> Step 6 — Apply Ingress manifest to $NAMESPACE with cert ARN substituted..."
 sed \
   -e "s|CERTIFICATE_ARN_PLACEHOLDER|$CERT_ARN|g" \
   -e "s|ALB_SG_PLACEHOLDER|$ALB_SG_ID|g" \
@@ -95,7 +99,7 @@ sed \
   | kubectl apply -f - -n "$NAMESPACE"
 
 echo ""
-echo "==> Step 6 — Wait for ALB to be provisioned (this takes ~2 minutes)..."
+echo "==> Step 7 — Wait for ALB to be provisioned (this takes ~2 minutes)..."
 echo "    Waiting for Ingress to get an ALB address..."
 for i in $(seq 1 24); do
   ALB_ADDRESS=$(kubectl get ingress petclinic-ingress -n "$NAMESPACE" \

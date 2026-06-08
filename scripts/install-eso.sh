@@ -65,11 +65,21 @@ kubectl rollout status deployment/external-secrets -n external-secrets --timeout
 kubectl get pods -n external-secrets
 
 echo ""
-echo "==> Step 4 — Apply ClusterSecretStore..."
+echo "==> Step 4 — Wait for ESO CRDs to be registered..."
+# CRDs are installed by the Helm chart but registered asynchronously.
+# kubectl wait --for=condition=Established blocks until the API server accepts them.
+kubectl wait --for=condition=Established \
+  crd/clustersecretstores.external-secrets.io \
+  crd/externalsecrets.external-secrets.io \
+  --timeout=60s
+echo "    CRDs are ready."
+
+echo ""
+echo "==> Step 5 — Apply ClusterSecretStore..."
 kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/cluster-secret-store.yaml"
 
 echo ""
-echo "==> Step 5 — Verify ClusterSecretStore is Ready..."
+echo "==> Step 6 — Verify ClusterSecretStore is Ready..."
 for i in $(seq 1 12); do
   STATUS=$(kubectl get clustersecretstore aws-secrets-manager \
     -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
@@ -84,12 +94,16 @@ done
 NAMESPACE="petclinic-$ENV"
 
 echo ""
-echo "==> Step 6 — Apply ExternalSecret manifests to $NAMESPACE..."
+echo "==> Step 7 — Ensure petclinic namespaces exist..."
+kubectl apply -f "$REPO_ROOT/k8s/base/namespaces/namespaces.yaml"
+
+echo ""
+echo "==> Step 8 — Apply ExternalSecret manifests to $NAMESPACE..."
 kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/rds-credentials.yaml" -n "$NAMESPACE"
 kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/openai-api-key.yaml" -n "$NAMESPACE"
 
 echo ""
-echo "==> Step 7 — Verify K8s Secrets were created..."
+echo "==> Step 9 — Verify K8s Secrets were created..."
 for i in $(seq 1 12); do
   RDS_SECRET=$(kubectl get secret rds-credentials -n "$NAMESPACE" --ignore-not-found -o name 2>/dev/null || true)
   OPENAI_SECRET=$(kubectl get secret openai-api-key -n "$NAMESPACE" --ignore-not-found -o name 2>/dev/null || true)
