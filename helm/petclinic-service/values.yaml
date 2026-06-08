@@ -1,5 +1,13 @@
 replicaCount: 1
 
+# maxSurge=0 prevents deadlock on t4g.small nodes where all 11 pod slots are used;
+# the old pod is terminated first, then the new one is created (brief unavailability in dev).
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
+
 image:
   registry: ""
   name: "service-name"
