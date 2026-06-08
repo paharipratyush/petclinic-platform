@@ -6,14 +6,18 @@
 #   - helm installed (>= 3.x)
 #   - terraform apply completed for the target environment (ESO IRSA role must exist)
 #
-# Usage:
-#   ./scripts/install-eso.sh --env dev
-#   ./scripts/install-eso.sh --env prod
+# Usage (from project root — works on WSL, Git Bash, Linux, macOS):
+#   bash scripts/install-eso.sh --env dev
+#   bash scripts/install-eso.sh --env prod
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# shellcheck source=scripts/lib/platform.sh
+source "$SCRIPT_DIR/lib/platform.sh"
+
 ENV=""
 
 usage() {
@@ -31,33 +35,10 @@ done
 [[ -z "$ENV" ]] && usage
 [[ "$ENV" != "dev" && "$ENV" != "prod" ]] && { echo "ERROR: --env must be 'dev' or 'prod'"; exit 1; }
 
-# On Windows, bash may not find 'terraform' even when terraform.exe is in PATH.
-if command -v terraform &>/dev/null; then
-  TF="terraform"
-elif command -v terraform.exe &>/dev/null; then
-  TF="terraform.exe"
-else
-  echo "ERROR: terraform not found in PATH. Install terraform and ensure it is accessible from bash."
-  exit 1
-fi
-
 TF_DIR="$REPO_ROOT/terraform/environments/$ENV"
 
-# terraform.exe is a Windows binary — it needs Windows-style paths (C:\...), not Unix paths.
-# WSL uses wslpath; Git Bash/MSYS2 uses cygpath. Native Linux needs no conversion.
-tf_chdir() {
-  if [[ "$TF" == "terraform.exe" ]]; then
-    if command -v wslpath &>/dev/null; then wslpath -w "$1"
-    elif command -v cygpath &>/dev/null; then cygpath -w "$1"
-    else echo "$1"
-    fi
-  else
-    echo "$1"
-  fi
-}
-
 echo "==> Collecting Terraform outputs from $ENV environment..."
-ROLE_ARN=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw eso_role_arn)
+ROLE_ARN=$(tf -chdir="$TF_DIR" output -raw eso_role_arn)
 
 [[ -z "$ROLE_ARN" ]] && { echo "ERROR: eso_role_arn output is empty — run terraform apply first"; exit 1; }
 

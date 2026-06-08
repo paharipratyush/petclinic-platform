@@ -7,14 +7,18 @@
 #   - terraform apply completed for the target environment (IRSA role + cert must exist)
 #   - CLOUDFLARE_API_TOKEN exported in your shell (Zone:Read + DNS:Edit permissions on praty.dev)
 #
-# Usage:
-#   ./scripts/install-lb-controller.sh --env dev
-#   ./scripts/install-lb-controller.sh --env prod
+# Usage (from project root — works on WSL, Git Bash, Linux, macOS):
+#   bash scripts/install-lb-controller.sh --env dev
+#   bash scripts/install-lb-controller.sh --env prod
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# shellcheck source=scripts/lib/platform.sh
+source "$SCRIPT_DIR/lib/platform.sh"
+
 ENV=""
 
 usage() {
@@ -32,46 +36,26 @@ done
 [[ -z "$ENV" ]] && usage
 [[ "$ENV" != "dev" && "$ENV" != "prod" ]] && { echo "ERROR: --env must be 'dev' or 'prod'"; exit 1; }
 
-# On Windows, bash may not find 'terraform' even when terraform.exe is in PATH.
-if command -v terraform &>/dev/null; then
-  TF="terraform"
-elif command -v terraform.exe &>/dev/null; then
-  TF="terraform.exe"
-else
-  echo "ERROR: terraform not found in PATH. Install terraform and ensure it is accessible from bash."
-  exit 1
-fi
-
 TF_DIR="$REPO_ROOT/terraform/environments/$ENV"
 
-# terraform.exe is a Windows binary — it needs Windows-style paths (C:\...), not Unix paths.
-# WSL uses wslpath; Git Bash/MSYS2 uses cygpath. Native Linux needs no conversion.
-tf_chdir() {
-  if [[ "$TF" == "terraform.exe" ]]; then
-    if command -v wslpath &>/dev/null; then wslpath -w "$1"
-    elif command -v cygpath &>/dev/null; then cygpath -w "$1"
-    else echo "$1"
-    fi
-  else
-    echo "$1"
-  fi
-}
-
 echo "==> Collecting Terraform outputs from $ENV environment..."
-ROLE_ARN=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw lb_controller_role_arn)
-CERT_ARN=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw certificate_arn)
-CLUSTER_NAME=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw cluster_name)
-ALB_SG_ID=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw alb_sg_id)
+ROLE_ARN=$(tf -chdir="$TF_DIR" output -raw lb_controller_role_arn)
+CERT_ARN=$(tf -chdir="$TF_DIR" output -raw certificate_arn)
+CLUSTER_NAME=$(tf -chdir="$TF_DIR" output -raw cluster_name)
+ALB_SG_ID=$(tf -chdir="$TF_DIR" output -raw alb_sg_id)
+VPC_ID=$(tf -chdir="$TF_DIR" output -raw vpc_id)
 
 [[ -z "$ROLE_ARN" ]]     && { echo "ERROR: lb_controller_role_arn output is empty — run terraform apply first"; exit 1; }
-[[ -z "$CERT_ARN" ]]    && { echo "ERROR: certificate_arn output is empty — run terraform apply first"; exit 1; }
+[[ -z "$CERT_ARN" ]]     && { echo "ERROR: certificate_arn output is empty — run terraform apply first"; exit 1; }
 [[ -z "$CLUSTER_NAME" ]] && { echo "ERROR: cluster_name output is empty — run terraform apply first"; exit 1; }
-[[ -z "$ALB_SG_ID" ]]   && { echo "ERROR: alb_sg_id output is empty — run terraform apply first"; exit 1; }
+[[ -z "$ALB_SG_ID" ]]    && { echo "ERROR: alb_sg_id output is empty — run terraform apply first"; exit 1; }
+[[ -z "$VPC_ID" ]]       && { echo "ERROR: vpc_id output is empty — run terraform apply first"; exit 1; }
 
 echo "  Cluster:      $CLUSTER_NAME"
 echo "  LB role ARN:  $ROLE_ARN"
 echo "  Cert ARN:     $CERT_ARN"
 echo "  ALB SG ID:    $ALB_SG_ID"
+echo "  VPC ID:       $VPC_ID"
 
 NAMESPACE="petclinic-$ENV"
 
@@ -90,7 +74,7 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
   --set serviceAccount.name=aws-load-balancer-controller \
   --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$ROLE_ARN" \
   --set region=eu-central-1 \
-  --set vpcId="$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw vpc_id)" \
+  --set vpcId="$VPC_ID" \
   --wait
 
 echo ""
@@ -119,6 +103,7 @@ for i in $(seq 1 24); do
   if [[ -n "$ALB_ADDRESS" ]]; then
     echo ""
     echo "==> ALB provisioned: $ALB_ADDRESS"
+    APP_URL=$(tf -chdir="$TF_DIR" output -raw app_url | sed 's|https://||')
     echo ""
     echo "==> NEXT STEP — Create the Cloudflare CNAME record:"
     echo "    Pass the ALB DNS name as a Terraform variable, then:"
@@ -128,13 +113,8 @@ for i in $(seq 1 24); do
     echo "    terraform apply plan.out"
     echo ""
     echo "    After apply, verify DNS resolution:"
-    if [[ "$ENV" == "prod" ]]; then
-      DOMAIN=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw app_url | sed 's|https://||')
-    else
-      DOMAIN=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw app_url | sed 's|https://||')
-    fi
-    echo "    nslookup $DOMAIN"
-    echo "    curl -I https://$DOMAIN"
+    echo "    nslookup $APP_URL"
+    echo "    curl -I https://$APP_URL"
     exit 0
   fi
   echo "    Waiting... ($((i * 5))s elapsed)"
