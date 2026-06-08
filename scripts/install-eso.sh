@@ -31,10 +31,20 @@ done
 [[ -z "$ENV" ]] && usage
 [[ "$ENV" != "dev" && "$ENV" != "prod" ]] && { echo "ERROR: --env must be 'dev' or 'prod'"; exit 1; }
 
+# On Windows, bash may not find 'terraform' even when terraform.exe is in PATH.
+if command -v terraform &>/dev/null; then
+  TF="terraform"
+elif command -v terraform.exe &>/dev/null; then
+  TF="terraform.exe"
+else
+  echo "ERROR: terraform not found in PATH. Install terraform and ensure it is accessible from bash."
+  exit 1
+fi
+
 TF_DIR="$REPO_ROOT/terraform/environments/$ENV"
 
 echo "==> Collecting Terraform outputs from $ENV environment..."
-ROLE_ARN=$(terraform -chdir="$TF_DIR" output -raw eso_role_arn)
+ROLE_ARN=$("$TF" -chdir="$TF_DIR" output -raw eso_role_arn)
 
 [[ -z "$ROLE_ARN" ]] && { echo "ERROR: eso_role_arn output is empty — run terraform apply first"; exit 1; }
 
