@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: genai-service-config
+  namespace: petclinic-dev
+  labels:
+    app.kubernetes.io/name: genai-service
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: service
+data:
+  SPRING_PROFILES_ACTIVE: "docker,production"
+  CONFIG_SERVER_URL: "http://config-server:8888"

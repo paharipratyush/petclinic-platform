@@ -1,0 +1,88 @@
+# Prod environment overrides — merged with per-service values by ArgoCD (E-16)
+# HA replicas, HPA enabled for stateless services, PDB for critical services
+environment: prod
+namespace: petclinic-prod
+
+hpa:
+  enabled: true
+
+pdb:
+  enabled: true
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+services:
+  config-server:
+    replicaCount: 2
+    hpa:
+      enabled: false
+    pdb:
+      minAvailable: 1
+
+  discovery-server:
+    replicaCount: 2
+    hpa:
+      enabled: false
+    pdb:
+      minAvailable: 1
+
+  api-gateway:
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "128Mi"
+      limits:
+        cpu: "1000m"
+        memory: "512Mi"
+    hpa:
+      minReplicas: 2
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+    pdb:
+      minAvailable: 1
+
+  customers-service:
+    replicaCount: 2
+    hpa:
+      minReplicas: 2
+      maxReplicas: 4
+      targetCPUUtilizationPercentage: 70
+    pdb:
+      minAvailable: 1
+
+  visits-service:
+    replicaCount: 2
+    hpa:
+      minReplicas: 2
+      maxReplicas: 4
+      targetCPUUtilizationPercentage: 70
+    pdb:
+      minAvailable: 1
+
+  vets-service:
+    replicaCount: 2
+    hpa:
+      minReplicas: 2
+      maxReplicas: 4
+      targetCPUUtilizationPercentage: 70
+    pdb:
+      minAvailable: 1
+
+  genai-service:
+    replicaCount: 1
+    hpa:
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 70
+
+  admin-server:
+    replicaCount: 1
+    hpa:
+      enabled: false

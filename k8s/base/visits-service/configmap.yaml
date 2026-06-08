@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: visits-service-config
+  namespace: petclinic-dev
+  labels:
+    app.kubernetes.io/name: visits-service
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: service
+data:
+  SPRING_PROFILES_ACTIVE: "docker,mysql"
+  CONFIG_SERVER_URL: "http://config-server:8888"
+  SPRING_DATASOURCE_URL: "jdbc:mysql://petclinic-dev-mysql.c1qcu40i4ohf.eu-central-1.rds.amazonaws.com:3306/petclinic"

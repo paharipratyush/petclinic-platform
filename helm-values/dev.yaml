@@ -1,0 +1,31 @@
+# Dev environment overrides — merged with per-service values by ArgoCD (E-16)
+# All services: 1 replica, no HPA, no PDB
+environment: dev
+namespace: petclinic-dev
+
+replicaCount: 1
+
+hpa:
+  enabled: false
+
+pdb:
+  enabled: false
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+# api-gateway overrides (higher CPU)
+services:
+  api-gateway:
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "128Mi"
+      limits:
+        cpu: "1000m"
+        memory: "512Mi"
