@@ -44,11 +44,24 @@ fi
 
 TF_DIR="$REPO_ROOT/terraform/environments/$ENV"
 
+# terraform.exe is a Windows binary — it needs Windows-style paths (C:\...), not Unix paths.
+# WSL uses wslpath; Git Bash/MSYS2 uses cygpath. Native Linux needs no conversion.
+tf_chdir() {
+  if [[ "$TF" == "terraform.exe" ]]; then
+    if command -v wslpath &>/dev/null; then wslpath -w "$1"
+    elif command -v cygpath &>/dev/null; then cygpath -w "$1"
+    else echo "$1"
+    fi
+  else
+    echo "$1"
+  fi
+}
+
 echo "==> Collecting Terraform outputs from $ENV environment..."
-ROLE_ARN=$("$TF" -chdir="$TF_DIR" output -raw lb_controller_role_arn)
-CERT_ARN=$("$TF" -chdir="$TF_DIR" output -raw certificate_arn)
-CLUSTER_NAME=$("$TF" -chdir="$TF_DIR" output -raw cluster_name)
-ALB_SG_ID=$("$TF" -chdir="$TF_DIR" output -raw alb_sg_id)
+ROLE_ARN=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw lb_controller_role_arn)
+CERT_ARN=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw certificate_arn)
+CLUSTER_NAME=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw cluster_name)
+ALB_SG_ID=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw alb_sg_id)
 
 [[ -z "$ROLE_ARN" ]]     && { echo "ERROR: lb_controller_role_arn output is empty — run terraform apply first"; exit 1; }
 [[ -z "$CERT_ARN" ]]    && { echo "ERROR: certificate_arn output is empty — run terraform apply first"; exit 1; }
@@ -77,7 +90,7 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
   --set serviceAccount.name=aws-load-balancer-controller \
   --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$ROLE_ARN" \
   --set region=eu-central-1 \
-  --set vpcId="$("$TF" -chdir="$TF_DIR" output -raw vpc_id)" \
+  --set vpcId="$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw vpc_id)" \
   --wait
 
 echo ""
@@ -116,9 +129,9 @@ for i in $(seq 1 24); do
     echo ""
     echo "    After apply, verify DNS resolution:"
     if [[ "$ENV" == "prod" ]]; then
-      DOMAIN=$("$TF" -chdir="$TF_DIR" output -raw app_url | sed 's|https://||')
+      DOMAIN=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw app_url | sed 's|https://||')
     else
-      DOMAIN=$("$TF" -chdir="$TF_DIR" output -raw app_url | sed 's|https://||')
+      DOMAIN=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw app_url | sed 's|https://||')
     fi
     echo "    nslookup $DOMAIN"
     echo "    curl -I https://$DOMAIN"

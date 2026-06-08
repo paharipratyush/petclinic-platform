@@ -43,8 +43,21 @@ fi
 
 TF_DIR="$REPO_ROOT/terraform/environments/$ENV"
 
+# terraform.exe is a Windows binary — it needs Windows-style paths (C:\...), not Unix paths.
+# WSL uses wslpath; Git Bash/MSYS2 uses cygpath. Native Linux needs no conversion.
+tf_chdir() {
+  if [[ "$TF" == "terraform.exe" ]]; then
+    if command -v wslpath &>/dev/null; then wslpath -w "$1"
+    elif command -v cygpath &>/dev/null; then cygpath -w "$1"
+    else echo "$1"
+    fi
+  else
+    echo "$1"
+  fi
+}
+
 echo "==> Collecting Terraform outputs from $ENV environment..."
-ROLE_ARN=$("$TF" -chdir="$TF_DIR" output -raw eso_role_arn)
+ROLE_ARN=$("$TF" -chdir="$(tf_chdir "$TF_DIR")" output -raw eso_role_arn)
 
 [[ -z "$ROLE_ARN" ]] && { echo "ERROR: eso_role_arn output is empty — run terraform apply first"; exit 1; }
 
