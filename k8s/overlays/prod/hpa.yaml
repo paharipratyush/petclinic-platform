@@ -1,0 +1,124 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-gateway
+  namespace: petclinic-prod
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-gateway
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: customers-service
+  namespace: petclinic-prod
+  labels:
+    app.kubernetes.io/name: customers-service
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: customers-service
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: visits-service
+  namespace: petclinic-prod
+  labels:
+    app.kubernetes.io/name: visits-service
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: visits-service
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vets-service
+  namespace: petclinic-prod
+  labels:
+    app.kubernetes.io/name: vets-service
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vets-service
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: genai-service
+  namespace: petclinic-prod
+  labels:
+    app.kubernetes.io/name: genai-service
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: genai-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

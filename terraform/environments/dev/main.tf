@@ -73,7 +73,7 @@ module "eks" {
   node_ami_type       = "AL2023_ARM_64_STANDARD"
   node_min_size       = 2
   node_max_size       = 4
-  node_desired_size   = 2
+  node_desired_size   = 3
 }
 
 # ------- E-6: DNS & Ingress (PETPLAT-28, PETPLAT-32) -------
