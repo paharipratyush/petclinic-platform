@@ -21,7 +21,7 @@ podDisruptionBudget:
   enabled: false
 
 config:
-  SPRING_PROFILES_ACTIVE: "docker,production"
+  SPRING_PROFILES_ACTIVE: "docker"
   CONFIG_SERVER_URL: "http://config-server:8888"
 
 initContainers:
