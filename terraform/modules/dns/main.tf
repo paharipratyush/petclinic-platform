@@ -18,33 +18,27 @@ resource "aws_acm_certificate" "main" {
   tags = var.tags
 }
 
-# ACM emits one validation CNAME per unique record name. For a wildcard + apex
-# cert, both domains share the same CNAME, so deduplicating by resource_record_name
-# produces a single Cloudflare record that satisfies both SANs.
-resource "cloudflare_record" "cert_validation" {
-  # The wildcard (*.domain) and apex (domain) SANs share the same validation CNAME.
-  # Using the grouping operator (...) deduplicates by resource_record_name so only
-  # one Cloudflare record is created regardless of how many SANs share it.
-  for_each = {
-    for dvo in aws_acm_certificate.main.domain_validation_options : dvo.resource_record_name => {
-      name    = trimsuffix(trimsuffix(dvo.resource_record_name, ".${var.domain_name}."), ".")
-      content = trimsuffix(dvo.resource_record_value, ".")
-      type    = dvo.resource_record_type
-    }...
-  }
+locals {
+  # Wildcard (*.domain) and apex (domain) share the same validation CNAME.
+  # Selecting the wildcard DVO gives one deterministic record without for_each,
+  # which avoids the "unknown for_each keys" plan error on first apply.
+  primary_dvo = one([
+    for dvo in aws_acm_certificate.main.domain_validation_options :
+    dvo if dvo.domain_name == "*.${var.domain_name}"
+  ])
+}
 
+resource "cloudflare_record" "cert_validation" {
   zone_id = data.cloudflare_zone.main.id
-  name    = each.value[0].name
-  content = each.value[0].content
-  type    = each.value[0].type
+  name    = trimsuffix(trimsuffix(local.primary_dvo.resource_record_name, ".${var.domain_name}."), ".")
+  content = trimsuffix(local.primary_dvo.resource_record_value, ".")
+  type    = local.primary_dvo.resource_record_type
   ttl     = 60
   proxied = false
 }
 
 # Blocks until ACM transitions the certificate status to ISSUED.
-# Since the validation CNAMEs are created above in Cloudflare (the authoritative DNS),
-# ACM detects them within minutes and this resource completes automatically.
 resource "aws_acm_certificate_validation" "main" {
   certificate_arn         = aws_acm_certificate.main.arn
-  validation_record_fqdns = [for k in keys(cloudflare_record.cert_validation) : trimsuffix(k, ".")]
+  validation_record_fqdns = [cloudflare_record.cert_validation.hostname]
 }
