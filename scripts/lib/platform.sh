@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 # Platform detection and cross-platform utilities.
 #
-# Source this at the top of scripts that invoke Windows-native binaries
-# (terraform.exe) from bash running inside WSL or Git Bash.
-#
-# After sourcing, use:
-#   tf -chdir=/some/path output -raw foo     (auto-converts path for terraform.exe)
-#   to_native_path /some/unix/path           (returns C:\... on Windows, unchanged on Linux/macOS)
+# Source this at the top of scripts that invoke CLI tools from bash on Windows
+# (WSL or Git Bash). After sourcing, call tf / helm / kubectl as normal —
+# the wrappers handle binary detection and path conversion transparently.
 #
 # Detection logic:
 #   WSL      — WSL_DISTRO_NAME env var is set, or /proc/version contains "microsoft"
@@ -23,35 +20,47 @@ else
   _PLATFORM="unix"
 fi
 
-# ── Terraform binary ───────────────────────────────────────────────────────────
-# WSL and Git Bash can see terraform.exe via PATH interop even when the native
-# Linux terraform binary is not installed.
+# ── Binary detection ───────────────────────────────────────────────────────────
+# On Windows bash environments (WSL, Git Bash), the native Linux binary may be
+# absent while the .exe Windows binary is reachable via PATH interop.
+# Each variable is set at source time; wrappers below use them at call time.
 
-if command -v terraform &>/dev/null; then
-  _TF_BIN="terraform"
-elif command -v terraform.exe &>/dev/null; then
-  _TF_BIN="terraform.exe"
-else
-  echo "ERROR: terraform not found in PATH. Install terraform and ensure it is accessible from bash." >&2
-  exit 1
-fi
+_find_bin() {
+  local name="$1" required="${2:-false}"
+  if command -v "$name" &>/dev/null; then
+    echo "$name"
+  elif command -v "${name}.exe" &>/dev/null; then
+    echo "${name}.exe"
+  elif [[ "$required" == "true" ]]; then
+    echo "ERROR: $name not found in PATH. Install $name and ensure it is accessible from bash." >&2
+    exit 1
+  else
+    echo ""
+  fi
+}
+
+_TF_BIN=$(_find_bin terraform true)   # required — exit if missing
+_HELM_BIN=$(_find_bin helm)            # lazy — error only when helm() is called
+_KUBECTL_BIN=$(_find_bin kubectl)      # lazy — error only when kubectl() is called
 
 # ── Path conversion ────────────────────────────────────────────────────────────
-# Windows-native binaries (terraform.exe) require Windows-style paths (C:\...).
+# Windows-native binaries require Windows-style paths (C:\...).
 # WSL paths look like /mnt/c/...; Git Bash paths look like /c/...
-# Both wslpath and cygpath convert to the correct Windows format.
+# Passes through stdin placeholder "-" and non-path strings unchanged.
 
 to_native_path() {
+  local path="$1"
+  # Stdin placeholder and empty strings are never file paths
+  [[ "$path" == "-" || -z "$path" ]] && echo "$path" && return
   case "$_PLATFORM" in
-    wsl)     wslpath -w "$1" 2>/dev/null || echo "$1" ;;
-    gitbash) cygpath -w "$1" 2>/dev/null || echo "$1" ;;
-    *)       echo "$1" ;;
+    wsl)     wslpath -w "$path" 2>/dev/null || echo "$path" ;;
+    gitbash) cygpath -w "$path" 2>/dev/null || echo "$path" ;;
+    *)       echo "$path" ;;
   esac
 }
 
-# ── Terraform wrapper ──────────────────────────────────────────────────────────
-# Drop-in replacement for 'terraform'. Converts -chdir=<path> to a native path
-# when terraform.exe is in use. All other arguments are passed through unchanged.
+# ── terraform wrapper ──────────────────────────────────────────────────────────
+# Intercepts -chdir=<path> and converts to native format for terraform.exe.
 
 tf() {
   local args=()
@@ -64,4 +73,61 @@ tf() {
     fi
   done
   "$_TF_BIN" "${args[@]}"
+}
+
+# ── helm wrapper ───────────────────────────────────────────────────────────────
+# Handles binary detection. Chart references (e.g. eks/aws-load-balancer-controller)
+# are not file paths and are passed through unchanged. Local chart paths and
+# -f/--values file args are converted when using helm.exe from WSL/Git Bash.
+
+helm() {
+  [[ -z "$_HELM_BIN" ]] && { echo "ERROR: helm not found in PATH. Install helm >= 3.x." >&2; return 1; }
+  if [[ "$_HELM_BIN" == "helm.exe" ]]; then
+    local args=() next_is_file=false
+    for arg in "$@"; do
+      if $next_is_file; then
+        args+=("$(to_native_path "$arg")")
+        next_is_file=false
+      elif [[ "$arg" == "-f" || "$arg" == "--values" ]]; then
+        args+=("$arg"); next_is_file=true
+      elif [[ "$arg" == -f=* ]]; then
+        args+=("-f=$(to_native_path "${arg#-f=}")")
+      elif [[ "$arg" == --values=* ]]; then
+        args+=("--values=$(to_native_path "${arg#--values=}")")
+      else
+        args+=("$arg")
+      fi
+    done
+    command "$_HELM_BIN" "${args[@]}"
+  else
+    command "$_HELM_BIN" "$@"
+  fi
+}
+
+# ── kubectl wrapper ────────────────────────────────────────────────────────────
+# Handles binary detection and converts -f/--filename paths for kubectl.exe.
+# Stdin placeholder "-f -" is passed through unchanged.
+
+kubectl() {
+  [[ -z "$_KUBECTL_BIN" ]] && { echo "ERROR: kubectl not found in PATH. Install kubectl." >&2; return 1; }
+  if [[ "$_KUBECTL_BIN" == "kubectl.exe" ]]; then
+    local args=() next_is_file=false
+    for arg in "$@"; do
+      if $next_is_file; then
+        [[ "$arg" == "-" ]] && args+=("-") || args+=("$(to_native_path "$arg")")
+        next_is_file=false
+      elif [[ "$arg" == "-f" || "$arg" == "--filename" ]]; then
+        args+=("$arg"); next_is_file=true
+      elif [[ "$arg" == -f=* ]]; then
+        args+=("-f=$(to_native_path "${arg#-f=}")")
+      elif [[ "$arg" == --filename=* ]]; then
+        args+=("--filename=$(to_native_path "${arg#--filename=}")")
+      else
+        args+=("$arg")
+      fi
+    done
+    command "$_KUBECTL_BIN" "${args[@]}"
+  else
+    command "$_KUBECTL_BIN" "$@"
+  fi
 }
