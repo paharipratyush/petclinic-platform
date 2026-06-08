@@ -12,7 +12,8 @@
 # image:
 #   registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod"
 
-# RDS datasource URL for MySQL-backed services (customers, visits, vets).
-# TODO(E-5 prod): replace placeholder with actual prod RDS endpoint after prod Terraform is applied.
-config:
-  SPRING_DATASOURCE_URL: "jdbc:mysql://petclinic-prod-mysql.REPLACE_AFTER_PROD_RDS_APPLY.eu-central-1.rds.amazonaws.com:3306/petclinic"
+# TODO(E-5 prod): after prod RDS is deployed, update SPRING_DATASOURCE_URL in
+# customers-service.yaml, visits-service.yaml, and vets-service.yaml to the prod RDS endpoint.
+# Do NOT set it here globally — it triggers Spring Boot datasource autoconfiguration in
+# non-MySQL services (e.g., genai-service) causing startup failure.
+config: {}
