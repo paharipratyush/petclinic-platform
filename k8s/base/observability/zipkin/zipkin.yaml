@@ -20,6 +20,10 @@ spec:
         app.kubernetes.io/part-of: petclinic
         app.kubernetes.io/component: infrastructure
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: zipkin
           image: openzipkin/zipkin:3
@@ -29,7 +33,7 @@ spec:
               protocol: TCP
           env:
             - name: JAVA_OPTS
-              value: "-Xms256m -Xmx512m"
+              value: "-Xms64m -Xmx256m"
           readinessProbe:
             httpGet:
               path: /health
@@ -45,10 +49,10 @@ spec:
           resources:
             requests:
               cpu: "100m"
-              memory: "256Mi"
+              memory: "128Mi"
             limits:
               cpu: "500m"
-              memory: "512Mi"
+              memory: "256Mi"
 ---
 apiVersion: v1
 kind: Service

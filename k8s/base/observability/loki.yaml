@@ -124,6 +124,8 @@ metadata:
     app.kubernetes.io/component: infrastructure
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: loki
@@ -159,8 +161,8 @@ spec:
               mountPath: /loki
           resources:
             requests:
-              cpu: "100m"
-              memory: "256Mi"
+              cpu: "50m"
+              memory: "128Mi"
             limits:
               cpu: "500m"
               memory: "512Mi"

@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Smoke test: validates all 8 petclinic services are running and healthy.
+# Usage: ./scripts/smoke-test.sh [dev|prod]
+# Exit 0 = all checks passed; exit 1 = one or more checks failed.
+
+set -euo pipefail
+
+ENV="${1:-dev}"
+NS="petclinic-${ENV}"
+PASS=0
+FAIL=0
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+ok()   { echo -e "  ${GREEN}✓${NC} $*"; ((PASS++)); }
+fail() { echo -e "  ${RED}✗${NC} $*"; ((FAIL++)); }
+info() { echo -e "  ${YELLOW}→${NC} $*"; }
+
+check_pod_running() {
+  local svc="$1"
+  local pod
+  pod=$(kubectl get pods -n "$NS" -l "app.kubernetes.io/name=${svc}" \
+        --no-headers -o custom-columns="NAME:.metadata.name,READY:.status.containerStatuses[0].ready" 2>/dev/null | head -1)
+  if echo "$pod" | grep -q "true"; then
+    ok "Pod running: ${svc}"
+  else
+    fail "Pod not running or not ready: ${svc} (got: '${pod}')"
+  fi
+}
+
+check_http() {
+  local label="$1"
+  local url="$2"
+  if kubectl run -n "$NS" smoke-http-check --rm -it --image=curlimages/curl:8.6.0 \
+      --restart=Never --quiet -- \
+      curl -sf --max-time 10 "$url" > /dev/null 2>&1; then
+    ok "HTTP OK: ${label} (${url})"
+  else
+    fail "HTTP FAIL: ${label} (${url})"
+  fi
+}
+
+echo ""
+echo "============================================================"
+echo "  Petclinic Smoke Test"
+echo "  Environment: ${ENV}"
+echo "  Namespace:   ${NS}"
+echo "============================================================"
+echo ""
+
+# ── 1. All 8 pods Running ─────────────────────────────────────
+echo "[ 1/6 ] Pod health"
+for svc in config-server discovery-server api-gateway \
+           customers-service visits-service vets-service \
+           genai-service admin-server; do
+  check_pod_running "$svc"
+done
+
+# ── 2. Config Server health ───────────────────────────────────
+echo ""
+echo "[ 2/6 ] Config Server actuator"
+check_http "config-server/health" "http://config-server.${NS}:8888/actuator/health"
+
+# ── 3. Eureka registration ────────────────────────────────────
+echo ""
+echo "[ 3/6 ] Eureka registration"
+eureka_apps=$(kubectl run -n "$NS" smoke-eureka --rm -it \
+  --image=curlimages/curl:8.6.0 --restart=Never --quiet -- \
+  curl -sf "http://discovery-server.${NS}:8761/eureka/apps" 2>/dev/null || true)
+for svc in API-GATEWAY CUSTOMERS-SERVICE VISITS-SERVICE VETS-SERVICE \
+           GENAI-SERVICE ADMIN-SERVER; do
+  if echo "$eureka_apps" | grep -qi "<app><name>${svc}</name>"; then
+    ok "Eureka: ${svc} registered"
+  else
+    fail "Eureka: ${svc} not found in registry"
+  fi
+done
+
+# ── 4. API Gateway routing ────────────────────────────────────
+echo ""
+echo "[ 4/6 ] API Gateway routing"
+check_http "api-gateway /actuator/health" \
+  "http://api-gateway.${NS}:8080/actuator/health"
+check_http "api-gateway /api/customer/owners" \
+  "http://api-gateway.${NS}:8080/api/customer/owners"
+check_http "api-gateway /api/vet/vets" \
+  "http://api-gateway.${NS}:8080/api/vet/vets"
+
+# ── 5. RDS connectivity (DB-backed services) ──────────────────
+echo ""
+echo "[ 5/6 ] RDS connectivity"
+for svc in customers-service visits-service vets-service; do
+  if kubectl run -n "$NS" smoke-db-"$svc" --rm -it \
+      --image=curlimages/curl:8.6.0 --restart=Never --quiet -- \
+      curl -sf --max-time 10 "http://${svc}.${NS}:808$(echo "$svc" | grep -o '[0-9]' | head -1)/actuator/health" \
+      > /dev/null 2>&1; then
+    ok "DB-backed service healthy: ${svc}"
+  else
+    fail "DB-backed service unhealthy: ${svc}"
+  fi
+done
+
+# ── 6. Observability stack ────────────────────────────────────
+echo ""
+echo "[ 6/6 ] Observability stack"
+kubectl run -n monitoring smoke-obs --rm -it \
+  --image=curlimages/curl:8.6.0 --restart=Never --quiet -- sh -c '
+    curl -sf http://prometheus:9090/-/ready > /dev/null && echo "prometheus:ready" || echo "prometheus:fail"
+    curl -sf http://alertmanager:9093/-/ready > /dev/null && echo "alertmanager:ready" || echo "alertmanager:fail"
+    curl -sf http://loki:3100/ready > /dev/null && echo "loki:ready" || echo "loki:fail"
+    curl -sf http://grafana:3000/api/health > /dev/null && echo "grafana:ready" || echo "grafana:fail"
+' 2>/dev/null | while read -r result; do
+    svc="${result%%:*}"
+    status="${result##*:}"
+    if [[ "$status" == "ready" ]]; then
+      ok "Observability: ${svc}"
+    else
+      fail "Observability: ${svc}"
+    fi
+  done
+
+kubectl run -n tracing smoke-zipkin --rm -it \
+  --image=curlimages/curl:8.6.0 --restart=Never --quiet -- \
+  curl -sf http://zipkin:9411/health > /dev/null 2>&1 && ok "Observability: zipkin" || fail "Observability: zipkin"
+
+# ── Summary ───────────────────────────────────────────────────
+echo ""
+echo "============================================================"
+echo "  Results: ${PASS} passed, ${FAIL} failed"
+echo "============================================================"
+echo ""
+
+if [[ "$FAIL" -gt 0 ]]; then
+  exit 1
+fi

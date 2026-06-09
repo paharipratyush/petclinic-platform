@@ -85,6 +85,8 @@ metadata:
     app.kubernetes.io/component: infrastructure
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: alertmanager

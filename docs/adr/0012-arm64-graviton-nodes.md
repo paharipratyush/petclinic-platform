@@ -1,4 +1,4 @@
-# ADR-0002: ARM64 (Graviton) EKS Worker Nodes
+# ADR-0012: ARM64 (Graviton) EKS Worker Nodes
 
 **Status:** Accepted
 **Date:** 2026-06-06

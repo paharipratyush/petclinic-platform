@@ -1566,11 +1566,14 @@ Architecture Decision Records are stored in `docs/adr/`.
 | ADR-0001 | All-public subnet design (no NAT Gateway) | Accepted | Cost optimization for student learning. SGs are the perimeter. Saves ~$35-65/mo. Trade-off: less defense-in-depth. |
 | ADR-0002 | EKS over ECS | Accepted | EKS chosen for industry relevance and Kubernetes learning. ECS would be simpler but less transferable. |
 | ADR-0003 | Shared RDS instance for all services | Accepted | Single `petclinic` database shared by 3 services. Matches app design (FK constraints cross-service). Simpler ops, lower cost. |
-| ADR-0004 | Plain K8s YAML over Helm | Superseded by ADR-0007 | Originally chose Kustomize for transparency. Superseded by Helm for industry relevance. |
+| ADR-0004 | Plain K8s YAML over Helm (original) | Superseded by ADR-0007 | Originally chose Kustomize for transparency. Superseded by Helm for industry relevance. |
 | ADR-0005 | GitHub Actions with OIDC federation | Accepted | No long-lived AWS credentials. OIDC federation is the AWS-recommended pattern. GitHub Actions for CI. |
 | ADR-0006 | Single-AZ RDS for both environments | Accepted | Cost optimization for learning. Multi-AZ doubles RDS cost. Students learn when to enable it. |
 | ADR-0007 | Helm over plain K8s YAML | Accepted | Generic Helm chart shared across 8 services. Per-service values files. Industry-standard packaging. Enables ArgoCD GitOps. Trade-off: Helm templating is less transparent than raw YAML. |
 | ADR-0008 | ArgoCD for GitOps (CD) | Accepted | ArgoCD watches Git, syncs Helm releases. CI (GitHub Actions) pushes images and commits tags. CD is fully declarative. Dev auto-syncs, prod requires manual approval. |
-| ADR-0009 | Karpenter over Cluster Autoscaler | Accepted | Faster node provisioning, better Spot diversification, EC2 Fleet API. Industry trend replacing CAS. Trade-off: more complex IAM setup. |
+| ADR-0009 | Karpenter over Cluster Autoscaler | Pending (E-14) | Faster node provisioning, better Spot diversification, EC2 Fleet API. Industry trend replacing CAS. Trade-off: more complex IAM setup. |
 | ADR-0010 | ECR Private (production-correct pattern) | Accepted | Private ECR teaches the production pattern: IAM-controlled access, lifecycle policies, scan-on-push, tag immutability. Cost: ~$1/month — negligible. |
 | ADR-0011 | Secrets Manager for secrets storage | Accepted | Industry-standard secrets management ($0.40/secret/month, ~$1.20 total). Built-in rotation capability, fine-grained IAM. Teaches students the production-grade approach. |
+| ADR-0012 | ARM64 (Graviton) EKS worker nodes | Accepted | t4g.small ARM64 nodes chosen for Graviton free trial (~$0 until Dec 2026). Requires linux/arm64 Docker images across all 8 services. |
+| ADR-0013 | Cloudflare Terraform provider for DNS | Accepted | Route 53 replaced by Cloudflare provider because praty.dev is on Cloudflare Registrar (no NS delegation support). Fully automated cert validation. |
+| ADR-0014 | Loki + FluentBit over CloudWatch Logs | Accepted | In-cluster logging with no per-GB AWS ingestion costs, no IRSA role, and tight Grafana integration. Trade-off: no cross-account visibility; EBS-backed storage not replicated. |
