@@ -1,5 +1,5 @@
 image:
-  name: springcommunity/spring-petclinic-admin-server
+  name: 568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev/admin-server
   tag: "e79b8a2"
 component: admin
 service:
