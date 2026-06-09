@@ -1,0 +1,163 @@
+---
+# Alertmanager config in a Secret (contains SMTP password placeholder).
+# Before applying to a live cluster, replace REPLACE_WITH_GMAIL_APP_PASSWORD:
+#   1. Generate a Gmail App Password at https://myaccount.google.com/apppasswords
+#   2. Edit this Secret or patch it:
+#        kubectl -n monitoring patch secret alertmanager-config \
+#          --type=json -p='[{"op":"replace","path":"/stringData/alertmanager.yml","value":"<full-config-with-real-password>"}]'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+type: Opaque
+stringData:
+  alertmanager.yml: |
+    global:
+      smtp_smarthost: smtp.gmail.com:587
+      smtp_from: anonym12303@gmail.com
+      smtp_auth_username: anonym12303@gmail.com
+      smtp_auth_password: REPLACE_WITH_GMAIL_APP_PASSWORD
+      smtp_require_tls: true
+
+    route:
+      receiver: email-default
+      group_by: [alertname, namespace, severity]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - matchers:
+            - severity=critical
+          receiver: email-critical
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 1h
+
+    receivers:
+      - name: email-default
+        email_configs:
+          - to: anonym12303@gmail.com
+            send_resolved: true
+
+      - name: email-critical
+        email_configs:
+          - to: anonym12303@gmail.com
+            send_resolved: true
+
+    inhibit_rules:
+      - source_matchers:
+          - severity=critical
+        target_matchers:
+          - severity=warning
+        equal: [alertname, namespace]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: alertmanager-data
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp2
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: infrastructure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alertmanager
+        app.kubernetes.io/part-of: petclinic
+        app.kubernetes.io/component: infrastructure
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.27.0
+          args:
+            - --config.file=/etc/alertmanager/alertmanager.yml
+            - --storage.path=/alertmanager
+            - --web.external-url=http://alertmanager:9093
+          ports:
+            - name: http
+              containerPort: 9093
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+              readOnly: true
+            - name: data
+              mountPath: /alertmanager
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9093
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9093
+            initialDelaySeconds: 60
+            periodSeconds: 15
+      volumes:
+        - name: config
+          secret:
+            secretName: alertmanager-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: alertmanager-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: alertmanager
+  ports:
+    - name: http
+      port: 9093
+      targetPort: 9093
+      protocol: TCP

@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Install the observability stack on EKS:
-#   Prometheus + Grafana + Alertmanager (kube-prometheus-stack)
-#   Loki (log aggregation) + FluentBit (log collection)
-#   Zipkin (distributed tracing)
+# Install the observability stack (raw K8s manifests — no Helm):
+#   Prometheus + Alertmanager + Grafana  →  monitoring namespace
+#   Loki + FluentBit DaemonSet           →  monitoring namespace
+#   Zipkin                               →  tracing namespace
+#   PrometheusRule CRDs (alert rules)    →  monitoring namespace
 #
 # Prerequisites:
 #   - kubectl configured for the target cluster
-#   - helm installed (>= 3.x)
-#   - terraform apply completed for the target env (EKS + EBS CSI driver must exist)
+#   - EKS cluster running with EBS CSI driver (for gp2 PVCs)
+#   - Internet access for PrometheusRule CRD download on first run
 #
 # Optional environment variables:
-#   ALERT_EMAIL      — email address to receive alert notifications (default: skips SMTP config)
-#   SMTP_HOST        — SMTP smarthost, e.g. smtp.gmail.com:587 (default: localhost:587)
-#   SMTP_FROM        — sender address (default: alertmanager@petclinic.local)
-#   SMTP_USERNAME    — SMTP auth username (default: empty)
-#   SMTP_PASSWORD    — SMTP auth password (default: empty, never commit this)
+#   SMTP_PASSWORD  — Gmail App Password for Alertmanager email alerts.
+#                    If set, patches alertmanager-config secret after apply.
+#                    NEVER pass this on the command line; use:
+#                      export SMTP_PASSWORD="$(aws secretsmanager get-secret-value --secret-id petclinic/alertmanager-smtp --query SecretString --output text | jq -r .password)"
 #
-# Usage (from project root):
+# Usage:
 #   bash scripts/install-observability.sh --env dev
 #   bash scripts/install-observability.sh --env prod
 
@@ -25,9 +25,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 OBS_DIR="$REPO_ROOT/k8s/base/observability"
-
-# shellcheck source=scripts/lib/platform.sh
-source "$SCRIPT_DIR/lib/platform.sh"
 
 ENV=""
 
@@ -46,34 +43,15 @@ done
 [[ -z "$ENV" ]] && usage
 [[ "$ENV" != "dev" && "$ENV" != "prod" ]] && { echo "ERROR: --env must be 'dev' or 'prod'"; exit 1; }
 
-PETCLINIC_NAMESPACE="petclinic-$ENV"
-
-# Size and retention per environment
-if [[ "$ENV" == "dev" ]]; then
-  PROMETHEUS_STORAGE_SIZE="10Gi"
-  PROMETHEUS_RETENTION="7d"
-  LOKI_STORAGE_SIZE="10Gi"
-  LOKI_RETENTION="168h"
-else
-  PROMETHEUS_STORAGE_SIZE="50Gi"
-  PROMETHEUS_RETENTION="15d"
-  LOKI_STORAGE_SIZE="50Gi"
-  LOKI_RETENTION="720h"
-fi
-
-# Alert email / SMTP settings
-ALERT_EMAIL="${ALERT_EMAIL:-""}"
-SMTP_HOST="${SMTP_HOST:-"localhost:587"}"
-SMTP_FROM="${SMTP_FROM:-"alertmanager@petclinic.local"}"
-SMTP_USERNAME="${SMTP_USERNAME:-""}"
 SMTP_PASSWORD="${SMTP_PASSWORD:-""}"
 
 echo "============================================================"
-echo "  Installing Observability Stack — petclinic-$ENV"
-echo "  Namespace:          monitoring (observability) + tracing"
-echo "  Prometheus storage: $PROMETHEUS_STORAGE_SIZE, retention: $PROMETHEUS_RETENTION"
-echo "  Loki storage:       $LOKI_STORAGE_SIZE, retention: $LOKI_RETENTION"
-[[ -n "$ALERT_EMAIL" ]] && echo "  Alert email:        $ALERT_EMAIL" || echo "  Alert email:        (not configured — set ALERT_EMAIL to enable)"
+echo "  Installing Observability Stack (raw K8s manifests)"
+echo "  Environment:  $ENV"
+echo "  Namespaces:   monitoring, tracing"
+[[ -n "$SMTP_PASSWORD" ]] \
+  && echo "  SMTP:         configured (will patch secret after apply)" \
+  || echo "  SMTP:         placeholder — set SMTP_PASSWORD to enable email alerts"
 echo "============================================================"
 echo ""
 
@@ -81,107 +59,76 @@ echo ""
 echo "==> Step 1 — Creating monitoring and tracing namespaces..."
 kubectl apply -f "$OBS_DIR/namespace.yaml"
 
-# ── Step 2: Add Helm repositories ─────────────────────────────────────────────
+# ── Step 2: Install PrometheusRule CRD ────────────────────────────────────────
 echo ""
-echo "==> Step 2 — Adding Helm repositories..."
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
-helm repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || true
-helm repo add fluent https://fluent.github.io/helm-charts 2>/dev/null || true
-helm repo update
+echo "==> Step 2 — Installing PrometheusRule CRD..."
+kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
+echo "  CRD installed."
 
-# ── Step 3: Create Grafana dashboard ConfigMap ────────────────────────────────
+# ── Step 3: Deploy Prometheus ─────────────────────────────────────────────────
 echo ""
-echo "==> Step 3 — Creating Grafana dashboard ConfigMap..."
-kubectl create configmap petclinic-dashboards \
-  --namespace monitoring \
-  --from-file="service-overview.json=$OBS_DIR/grafana-dashboards/service-overview.json" \
-  --from-file="per-service.json=$OBS_DIR/grafana-dashboards/per-service.json" \
-  --from-file="jvm-metrics.json=$OBS_DIR/grafana-dashboards/jvm-metrics.json" \
-  --dry-run=client -o yaml | kubectl apply -f -
+echo "==> Step 3 — Deploying Prometheus..."
+kubectl apply -f "$OBS_DIR/prometheus.yaml"
+kubectl rollout status deployment/prometheus -n monitoring --timeout=120s
+echo "  Prometheus running."
 
-kubectl label configmap petclinic-dashboards -n monitoring \
-  grafana_dashboard=1 \
-  grafana_folder=Petclinic \
-  "app.kubernetes.io/managed-by=kubectl" \
-  "app.kubernetes.io/part-of=petclinic" \
-  --overwrite
-
-# ── Step 4: Install kube-prometheus-stack ────────────────────────────────────
+# ── Step 4: Deploy Alertmanager ───────────────────────────────────────────────
 echo ""
-echo "==> Step 4 — Installing kube-prometheus-stack (Prometheus + Grafana + Alertmanager)..."
-echo "    This takes 2-3 minutes..."
+echo "==> Step 4 — Deploying Alertmanager..."
+kubectl apply -f "$OBS_DIR/alertmanager.yaml"
 
-GRAFANA_PASSWORD="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16 || openssl rand -hex 8)"
+if [[ -n "$SMTP_PASSWORD" ]]; then
+  echo "  Patching alertmanager-config secret with real SMTP password..."
+  CURRENT_CONFIG="$(kubectl -n monitoring get secret alertmanager-config -o jsonpath='{.data.alertmanager\.yml}' | base64 -d)"
+  NEW_CONFIG="$(printf '%s' "$CURRENT_CONFIG" | sed "s|REPLACE_WITH_GMAIL_APP_PASSWORD|$SMTP_PASSWORD|g")"
+  ENCODED="$(printf '%s' "$NEW_CONFIG" | base64 | tr -d '\n')"
+  kubectl -n monitoring patch secret alertmanager-config \
+    --type=json \
+    -p="[{\"op\":\"replace\",\"path\":\"/data/alertmanager.yml\",\"value\":\"$ENCODED\"}]"
+  unset ENCODED NEW_CONFIG CURRENT_CONFIG
+  echo "  SMTP password configured."
+fi
 
-TMPFILE_PROM="$(mktemp /tmp/kube-prom-stack-values-XXXXX.yaml)"
-trap 'rm -f "$TMPFILE_PROM"' EXIT
+kubectl rollout status deployment/alertmanager -n monitoring --timeout=120s
+echo "  Alertmanager running."
 
-sed \
-  -e "s|PETCLINIC_NAMESPACE|$PETCLINIC_NAMESPACE|g" \
-  -e "s|PROMETHEUS_STORAGE_SIZE|$PROMETHEUS_STORAGE_SIZE|g" \
-  -e "s|PROMETHEUS_RETENTION|$PROMETHEUS_RETENTION|g" \
-  -e "s|ALERT_EMAIL|$ALERT_EMAIL|g" \
-  -e "s|SMTP_HOST|$SMTP_HOST|g" \
-  -e "s|SMTP_FROM|$SMTP_FROM|g" \
-  -e "s|SMTP_USERNAME|$SMTP_USERNAME|g" \
-  -e "s|SMTP_PASSWORD|$SMTP_PASSWORD|g" \
-  "$OBS_DIR/prometheus/kube-prometheus-stack-values.yaml" \
-  > "$TMPFILE_PROM"
-
-helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-  --namespace monitoring \
-  --set grafana.adminPassword="$GRAFANA_PASSWORD" \
-  --version ">=60.0.0" \
-  -f "$TMPFILE_PROM" \
-  --wait \
-  --timeout 10m
-
-echo "  kube-prometheus-stack installed."
-
-# ── Step 5: Install Loki ──────────────────────────────────────────────────────
+# ── Step 5: Deploy Loki ───────────────────────────────────────────────────────
 echo ""
-echo "==> Step 5 — Installing Loki (log aggregation)..."
+echo "==> Step 5 — Deploying Loki..."
+kubectl apply -f "$OBS_DIR/loki.yaml"
+kubectl rollout status deployment/loki -n monitoring --timeout=120s
+echo "  Loki running."
 
-TMPFILE_LOKI="$(mktemp /tmp/loki-values-XXXXX.yaml)"
-trap 'rm -f "$TMPFILE_LOKI"' EXIT
-
-sed \
-  -e "s|LOKI_STORAGE_SIZE|$LOKI_STORAGE_SIZE|g" \
-  -e "s|LOKI_RETENTION|$LOKI_RETENTION|g" \
-  "$OBS_DIR/loki/loki-values.yaml" \
-  > "$TMPFILE_LOKI"
-
-helm upgrade --install loki grafana/loki \
-  --namespace monitoring \
-  --version ">=6.0.0" \
-  -f "$TMPFILE_LOKI" \
-  --wait \
-  --timeout 5m
-
-echo "  Loki installed."
-
-# ── Step 6: Install FluentBit ─────────────────────────────────────────────────
+# ── Step 6: Deploy FluentBit DaemonSet ────────────────────────────────────────
 echo ""
-echo "==> Step 6 — Installing FluentBit (log collection DaemonSet)..."
-helm upgrade --install fluent-bit fluent/fluent-bit \
-  --namespace monitoring \
-  -f "$OBS_DIR/fluentbit/fluentbit-values.yaml" \
-  --wait \
-  --timeout 3m
+echo "==> Step 6 — Deploying FluentBit DaemonSet..."
+kubectl apply -f "$OBS_DIR/fluentbit.yaml"
+kubectl rollout status daemonset/fluent-bit -n monitoring --timeout=120s
+echo "  FluentBit running."
 
-echo "  FluentBit DaemonSet installed."
-
-# ── Step 7: Deploy Zipkin ─────────────────────────────────────────────────────
+# ── Step 7: Deploy Grafana ────────────────────────────────────────────────────
 echo ""
-echo "==> Step 7 — Deploying Zipkin (distributed tracing)..."
+echo "==> Step 7 — Deploying Grafana..."
+kubectl apply -f "$OBS_DIR/grafana.yaml"
+kubectl rollout status deployment/grafana -n monitoring --timeout=120s
+echo "  Grafana running."
+
+# ── Step 8: Apply PrometheusRule alert rules ──────────────────────────────────
+echo ""
+echo "==> Step 8 — Applying PrometheusRule alert rules..."
+kubectl apply -f "$OBS_DIR/alerting-rules.yaml"
+echo "  Alert rules applied."
+
+# ── Step 9: Deploy Zipkin ─────────────────────────────────────────────────────
+echo ""
+echo "==> Step 9 — Deploying Zipkin..."
 kubectl apply -f "$OBS_DIR/zipkin/zipkin.yaml"
 kubectl rollout status deployment/zipkin -n tracing --timeout=120s
+echo "  Zipkin running."
 
-echo "  Zipkin deployed."
-
-# ── Step 8: Verify ────────────────────────────────────────────────────────────
+# ── Step 10: Verify ───────────────────────────────────────────────────────────
 echo ""
-echo "==> Step 8 — Verifying observability stack..."
+echo "==> Step 10 — Verifying observability stack..."
 echo ""
 echo "  Pods in monitoring namespace:"
 kubectl get pods -n monitoring --no-headers | awk '{printf "    %-50s %s/%s\n", $1, $2, $3}'
@@ -191,32 +138,29 @@ kubectl get pods -n tracing --no-headers | awk '{printf "    %-50s %s/%s\n", $1,
 
 echo ""
 echo "==========================================================="
-echo "  Observability stack installed for petclinic-$ENV"
+echo "  Observability stack installed — petclinic ($ENV)"
 echo ""
-echo "  Grafana admin password: $GRAFANA_PASSWORD"
-echo "  (change this via: kubectl -n monitoring get secret kube-prometheus-stack-grafana -o yaml)"
+echo "  Grafana (admin / petclinic-admin):"
+echo "    kubectl port-forward svc/grafana -n monitoring 3000:3000"
+echo "    open: http://localhost:3000"
 echo ""
-echo "  Access Grafana UI:"
-echo "    kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80"
-echo "    then open: http://localhost:3000  (admin / $GRAFANA_PASSWORD)"
+echo "  Prometheus:"
+echo "    kubectl port-forward svc/prometheus -n monitoring 9090:9090"
+echo "    open: http://localhost:9090/targets  (5 petclinic scrape targets)"
 echo ""
-echo "  Access Prometheus UI:"
-echo "    kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090"
-echo "    then open: http://localhost:9090"
+echo "  Alertmanager:"
+echo "    kubectl port-forward svc/alertmanager -n monitoring 9093:9093"
+echo "    open: http://localhost:9093"
 echo ""
-echo "  Access Alertmanager UI:"
-echo "    kubectl port-forward svc/kube-prometheus-stack-alertmanager -n monitoring 9093:9093"
-echo "    then open: http://localhost:9093"
-echo ""
-echo "  Access Zipkin UI:"
+echo "  Zipkin:"
 echo "    kubectl port-forward svc/zipkin -n tracing 9411:9411"
-echo "    then open: http://localhost:9411"
+echo "    open: http://localhost:9411"
 echo ""
-if [[ -z "$ALERT_EMAIL" ]]; then
-  echo "  NOTE: ALERT_EMAIL was not set — Alertmanager has no notification channel."
-  echo "  To enable email alerts, re-run with: ALERT_EMAIL=you@example.com bash $0 --env $ENV"
+if [[ -z "$SMTP_PASSWORD" ]]; then
+  echo "  NOTE: Email alerts are not active (placeholder password in secret)."
+  echo "  To enable:"
+  echo "    export SMTP_PASSWORD=<gmail-app-password>"
+  echo "    bash $0 --env $ENV"
   echo ""
 fi
-echo "  Check scrape targets (should show all 8 petclinic services):"
-echo "    http://localhost:9090/targets  (after port-forwarding Prometheus)"
 echo "==========================================================="

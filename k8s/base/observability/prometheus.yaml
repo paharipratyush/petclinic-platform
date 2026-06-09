@@ -1,0 +1,248 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: infrastructure
+---
+# Prometheus main config: 5 scrape targets (only services with micrometer-registry-prometheus)
+# config-server, discovery-server, admin-server are intentionally excluded — no prometheus dependency
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+                - alertmanager:9093
+
+    rule_files:
+      - /etc/prometheus/rules/*.yaml
+
+    scrape_configs:
+      - job_name: api-gateway
+        metrics_path: /actuator/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - api-gateway.petclinic-dev:8080
+
+      - job_name: customers-service
+        metrics_path: /actuator/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - customers-service.petclinic-dev:8081
+
+      - job_name: visits-service
+        metrics_path: /actuator/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - visits-service.petclinic-dev:8082
+
+      - job_name: vets-service
+        metrics_path: /actuator/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - vets-service.petclinic-dev:8083
+
+      - job_name: genai-service
+        metrics_path: /actuator/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - genai-service.petclinic-dev:8084
+---
+# Alert rules loaded by raw Prometheus via rule_files glob.
+# PodRestartLoop and HighMemoryUsage require kube-state-metrics; defined here per spec.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alert-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+data:
+  rules.yaml: |
+    groups:
+      - name: petclinic
+        rules:
+          - alert: ServiceDown
+            expr: up == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Service {{ $labels.job }} is down"
+              description: "Prometheus target {{ $labels.job }} has been unreachable for >1 minute."
+
+          - alert: HighErrorRate
+            expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) / rate(http_server_requests_seconds_count[5m]) > 0.05
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High 5xx error rate on {{ $labels.job }}"
+              description: "{{ $labels.job }} error rate is above 5% for >5 minutes."
+
+          - alert: HighLatency
+            expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 0.5
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High p95 latency on {{ $labels.job }}"
+              description: "{{ $labels.job }} p95 latency exceeds 500ms for >5 minutes."
+
+          - alert: PodRestartLoop
+            expr: increase(kube_pod_container_status_restarts_total[15m]) > 3
+            for: 0m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod {{ $labels.pod }} is restart-looping"
+              description: "Pod {{ $labels.pod }} has restarted >3 times in the last 15 minutes."
+
+          - alert: HighMemoryUsage
+            expr: container_memory_working_set_bytes / container_spec_memory_limit_bytes > 0.8
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High memory usage in {{ $labels.pod }}"
+              description: "Container {{ $labels.container }} in pod {{ $labels.pod }} is using >80% of memory limit."
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp2
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: infrastructure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/part-of: petclinic
+        app.kubernetes.io/component: infrastructure
+    spec:
+      serviceAccountName: prometheus
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.51.2
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=7d
+            - --web.enable-lifecycle
+          ports:
+            - name: http
+              containerPort: 9090
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+              readOnly: true
+            - name: rules
+              mountPath: /etc/prometheus/rules
+              readOnly: true
+            - name: data
+              mountPath: /prometheus
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 60
+            periodSeconds: 15
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: rules
+          configMap:
+            name: prometheus-alert-rules
+        - name: data
+          persistentVolumeClaim:
+            claimName: prometheus-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+      protocol: TCP

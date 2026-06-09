@@ -1,0 +1,97 @@
+---
+# PrometheusRule CRDs — processed by Prometheus Operator if installed.
+# The same rules are also embedded in prometheus-alert-rules ConfigMap (prometheus.yaml)
+# so raw Prometheus loads them via rule_files even without the Operator.
+#
+# Prerequisite: install the CRD before applying this file:
+#   kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: petclinic-prometheus-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: petclinic-prometheus-rules
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  groups:
+    - name: petclinic
+      rules:
+        - alert: ServiceDown
+          expr: up == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Service {{ $labels.job }} is down"
+            description: "Prometheus target {{ $labels.job }} has been unreachable for >1 minute."
+
+        - alert: HighErrorRate
+          expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) / rate(http_server_requests_seconds_count[5m]) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High 5xx error rate on {{ $labels.job }}"
+            description: "{{ $labels.job }} error rate is above 5% for >5 minutes."
+
+        - alert: HighLatency
+          expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High p95 latency on {{ $labels.job }}"
+            description: "{{ $labels.job }} p95 latency exceeds 500ms for >5 minutes."
+
+        - alert: PodRestartLoop
+          expr: increase(kube_pod_container_status_restarts_total[15m]) > 3
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.pod }} is restart-looping"
+            description: "Pod {{ $labels.pod }} has restarted >3 times in the last 15 minutes."
+
+        - alert: HighMemoryUsage
+          expr: container_memory_working_set_bytes / container_spec_memory_limit_bytes > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High memory usage in {{ $labels.pod }}"
+            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} is using >80% of memory limit."
+---
+# Loki alert rules in PrometheusRule format — evaluated by the Loki ruler.
+# The same rules are also mounted into the Loki container via loki-alert-rules ConfigMap (loki.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: petclinic-loki-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: petclinic-loki-rules
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  groups:
+    - name: petclinic-logs
+      rules:
+        - alert: LogErrorSpike
+          expr: rate({namespace=~"petclinic-.*"} |= "ERROR" [5m]) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Log error spike in namespace {{ $labels.namespace }}"
+            description: "ERROR log rate exceeded 0.5/s for >5 minutes in {{ $labels.namespace }}."
+
+        - alert: JVMOutOfMemory
+          expr: count_over_time({namespace=~"petclinic-.*"} |= "OutOfMemoryError" [5m]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "JVM OutOfMemoryError detected in {{ $labels.namespace }}"
+            description: "An OutOfMemoryError was logged in namespace {{ $labels.namespace }}."
