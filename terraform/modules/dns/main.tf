@@ -1,9 +1,7 @@
-# Route53 hosted zone for the domain.
-# After first apply, retrieve the nameservers from the `nameservers` output and
-# configure them at your domain registrar (works with any registrar).
-resource "aws_route53_zone" "main" {
+# Cloudflare zone lookup — the zone must already exist in Cloudflare (it does because
+# praty.dev is registered via Cloudflare Registrar). Zone:Read permission required.
+data "cloudflare_zone" "main" {
   name = var.domain_name
-  tags = var.tags
 }
 
 # ACM wildcard certificate — covers *.domain and the apex domain.
@@ -19,27 +17,31 @@ resource "aws_acm_certificate" "main" {
   tags = var.tags
 }
 
-# DNS validation records in Route53.
-# ACM publishes the CNAME names/values; we create them in Route53 so ACM can verify ownership.
-resource "aws_route53_record" "cert_validation" {
+# ACM validation CNAMEs in Cloudflare.
+# ACM emits the same resource_record_name for both *.domain and domain SANs.
+# The grouping operator (...) deduplicates them so only one Cloudflare record is created.
+# proxied = false is required — Cloudflare proxy cannot front ACM validation CNAMEs.
+resource "cloudflare_record" "cert_validation" {
   for_each = {
-    for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
+    for dvo in aws_acm_certificate.main.domain_validation_options :
+      dvo.resource_record_name => {
+        name    = trimsuffix(trimsuffix(dvo.resource_record_name, ".${var.domain_name}."), ".")
+        content = trimsuffix(dvo.resource_record_value, ".")
+        type    = dvo.resource_record_type
+      }...
   }
 
-  zone_id         = aws_route53_zone.main.zone_id
-  name            = each.value.name
-  type            = each.value.type
-  records         = [each.value.record]
-  ttl             = 60
-  allow_overwrite = true
+  zone_id = data.cloudflare_zone.main.id
+  name    = each.value[0].name
+  content = each.value[0].content
+  type    = each.value[0].type
+  ttl     = 60
+  proxied = false
 }
 
 # Blocks until ACM transitions the certificate status to ISSUED.
+# Completes within 2-5 minutes because Cloudflare is the authoritative DNS.
 resource "aws_acm_certificate_validation" "main" {
   certificate_arn         = aws_acm_certificate.main.arn
-  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+  validation_record_fqdns = [for r in cloudflare_record.cert_validation : r.hostname]
 }

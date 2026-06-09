@@ -1,11 +1,6 @@
-output "zone_id" {
-  description = "Route53 hosted zone ID — used when creating additional DNS records in the same zone"
-  value       = aws_route53_zone.main.zone_id
-}
-
-output "nameservers" {
-  description = "Route53 nameservers — configure these NS records at your domain registrar to delegate DNS to Route53"
-  value       = aws_route53_zone.main.name_servers
+output "cloudflare_zone_id" {
+  description = "Cloudflare zone ID — used when creating additional DNS records in the same zone (e.g., the app CNAME in the environment root module)"
+  value       = data.cloudflare_zone.main.id
 }
 
 output "certificate_arn" {

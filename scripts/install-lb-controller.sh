@@ -6,6 +6,7 @@
 #     Run: aws eks update-kubeconfig --name petclinic-{env} --region eu-central-1
 #   - helm installed (>= 3.x)
 #   - terraform apply completed for the target environment (IRSA role + cert must exist)
+#   - CLOUDFLARE_API_TOKEN exported in your shell (required for the terraform apply in Step 9)
 #   - domain_name variable set (e.g. in terraform.tfvars or TF_VAR_domain_name)
 #
 # Usage (from project root):
@@ -136,7 +137,8 @@ aws ssm put-parameter \
 echo "  Stored at: /petclinic/$ENV/alb-dns-name"
 
 echo ""
-echo "==> Step 9 — Apply Terraform to create/update Route53 DNS CNAME record..."
+echo "==> Step 9 — Apply Terraform to create/update Cloudflare DNS CNAME record..."
+echo "  NOTE: CLOUDFLARE_API_TOKEN must be set in your environment."
 tf -chdir="$TF_DIR" plan -var="alb_dns_name=$ALB_ADDRESS" -out /tmp/dns-update.plan
 tf -chdir="$TF_DIR" apply /tmp/dns-update.plan
 rm -f /tmp/dns-update.plan
@@ -148,10 +150,7 @@ echo ""
 APP_URL=$(tf -chdir="$TF_DIR" output -raw app_url 2>/dev/null || echo "https://petclinic-$ENV.<your-domain>")
 echo "  Application URL: $APP_URL"
 echo ""
-echo "  NAMESERVERS — set these at your domain registrar:"
-tf -chdir="$TF_DIR" output -json nameservers 2>/dev/null \
-  | tr -d '[]"' | tr ',' '\n' | sed 's/^[[:space:]]*/  /' | grep -v '^[[:space:]]*$' || true
-echo ""
-echo "  DNS will work as soon as NS records propagate (can take up to 48h,"
-echo "  but usually < 5 minutes if changed from Cloudflare to Route53)."
+echo "  The CNAME record was created in Cloudflare automatically."
+echo "  DNS propagation is typically instant for Cloudflare-managed"
+echo "  domains. The app should be reachable within 1-2 minutes."
 echo "==========================================================="

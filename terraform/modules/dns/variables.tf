@@ -1,5 +1,5 @@
 variable "domain_name" {
-  description = "Base domain name for the platform (e.g., example.com). A Route53 hosted zone is created for this domain. After apply, configure the outputted nameservers at your domain registrar to delegate DNS to Route53."
+  description = "Base domain name for the platform (e.g., praty.dev). Must be a domain managed via Cloudflare DNS. The Cloudflare zone is looked up by name — no zone ID needed. CLOUDFLARE_API_TOKEN must be set in the environment with Zone:Read and DNS:Edit permissions."
   type        = string
 
   validation {

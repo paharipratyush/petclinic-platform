@@ -5,12 +5,13 @@
 #   - AWS CLI configured with credentials for the target account
 #   - terraform, kubectl, helm installed and in PATH
 #   - S3 backend and DynamoDB table exist (run scripts/bootstrap-state.sh once)
+#   - CLOUDFLARE_API_TOKEN exported in your shell (Zone:Read + DNS:Edit on the domain)
 #   - terraform.tfvars in terraform/environments/{env}/ with at minimum:
-#       domain_name = "yourdomain.com"
+#       domain_name = "yourdomain.com"   # must be a Cloudflare-managed domain
 #     (optional: openai_api_key = "sk-...")
 #
 # What this script does (in order):
-#   1. terraform apply  — provisions EKS, RDS, VPC, ECR, ACM, Route53 zone
+#   1. terraform apply  — provisions EKS, RDS, VPC, ECR, ACM, Cloudflare DNS records
 #   2. aws eks update-kubeconfig  — configures kubectl
 #   3. Install ArgoCD  — GitOps controller
 #   4. Apply ArgoCD Application CRDs + RBAC  — registers all 16 apps
@@ -55,7 +56,7 @@ echo "============================================================"
 echo ""
 
 # ── Step 1: Terraform apply ────────────────────────────────────────────────
-echo "==> Step 1 — Terraform apply (EKS, RDS, VPC, Route53, ACM)..."
+echo "==> Step 1 — Terraform apply (EKS, RDS, VPC, ACM, Cloudflare DNS)..."
 echo "    This takes approximately 15-20 minutes on first run."
 tf -chdir="$TF_DIR" init -upgrade
 tf -chdir="$TF_DIR" plan -out /tmp/petclinic-$ENV.plan
@@ -63,23 +64,18 @@ tf -chdir="$TF_DIR" apply /tmp/petclinic-$ENV.plan
 rm -f /tmp/petclinic-$ENV.plan
 
 CLUSTER_NAME=$(tf -chdir="$TF_DIR" output -raw cluster_name)
-NAMESERVERS=$(tf -chdir="$TF_DIR" output -json nameservers 2>/dev/null \
-  | tr -d '[]"' | tr ',' '\n' | sed 's/^[[:space:]]*/    /' | grep -v '^[[:space:]]*$' || true)
 
 echo ""
 echo "  ┌──────────────────────────────────────────────────────────┐"
-echo "  │  ACTION REQUIRED — configure nameservers at registrar    │"
+echo "  │  DNS handled automatically via Cloudflare provider       │"
 echo "  │                                                          │"
-echo "  │  Set these NS records for your domain:                   │"
-echo "$NAMESERVERS" | while read -r ns; do printf "  │  %-58s│\n" "$ns"; done
+echo "  │  The ACM cert validation CNAME was created in            │"
+echo "  │  Cloudflare by Terraform. The certificate should         │"
+echo "  │  issue within 2-5 minutes. No registrar action needed.   │"
 echo "  │                                                          │"
-echo "  │  DNS will work after nameservers propagate (< 5 min      │"
-echo "  │  from Cloudflare, up to 48h from other registrars).      │"
+echo "  │  Prerequisites: CLOUDFLARE_API_TOKEN must be set in      │"
+echo "  │  your environment with Zone:Read + DNS:Edit perms.       │"
 echo "  └──────────────────────────────────────────────────────────┘"
-echo ""
-echo "  You can continue setting up the cluster now. DNS propagation"
-echo "  happens in parallel — your app will become reachable once NS"
-echo "  records are updated at your registrar."
 echo ""
 
 # ── Step 2: Configure kubectl ──────────────────────────────────────────────

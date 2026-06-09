@@ -17,7 +17,7 @@ variable "project" {
 }
 
 variable "domain_name" {
-  description = "Base domain name for the platform (e.g., example.com). A Route53 hosted zone is created for this domain. After first apply, set the outputted nameservers at your domain registrar to delegate DNS to Route53."
+  description = "Base domain name for the platform (e.g., praty.dev). Must be managed via Cloudflare DNS. CLOUDFLARE_API_TOKEN must be set in the environment. See ADR-0004."
   type        = string
 }
 
