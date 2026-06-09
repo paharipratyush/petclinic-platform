@@ -1,0 +1,84 @@
+# Karpenter v1.5.0 — Installation Reference
+# PETPLAT-73: Install Karpenter on EKS
+#
+# This file documents the Helm install command and required pre-conditions.
+# Karpenter is installed via Helm, not via kubectl apply — there is no raw manifest.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# PRE-CONDITIONS (must be satisfied before running helm install)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 1. Terraform karpenter module applied:
+#      cd terraform/environments/{env}
+#      terraform apply plan.out
+#
+# 2. kubeconfig pointing at the target cluster:
+#      aws eks update-kubeconfig --name petclinic-{env} --region eu-central-1
+#
+# 3. Terraform outputs available (needed for --set values below):
+#      terraform output karpenter_role_arn
+#      terraform output karpenter_queue_name
+#      terraform output cluster_name          # from module.eks outputs
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# INSTALL COMMAND — dev environment
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# export CLUSTER_NAME=$(cd terraform/environments/dev && terraform output -raw cluster_name)
+# export KARPENTER_ROLE_ARN=$(cd terraform/environments/dev && terraform output -raw karpenter_role_arn)
+# export KARPENTER_QUEUE=$(cd terraform/environments/dev && terraform output -raw karpenter_queue_name)
+#
+# helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
+#   --version 1.5.0 \
+#   --namespace kube-system \
+#   --create-namespace \
+#   --set settings.clusterName=${CLUSTER_NAME} \
+#   --set settings.interruptionQueue=${KARPENTER_QUEUE} \
+#   --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${KARPENTER_ROLE_ARN}" \
+#   --set controller.resources.requests.cpu=100m \
+#   --set controller.resources.requests.memory=256Mi \
+#   --set controller.resources.limits.cpu=1 \
+#   --set controller.resources.limits.memory=1Gi \
+#   --wait
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# INSTALL COMMAND — prod environment (same, different Terraform workspace)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# export CLUSTER_NAME=$(cd terraform/environments/prod && terraform output -raw cluster_name)
+# export KARPENTER_ROLE_ARN=$(cd terraform/environments/prod && terraform output -raw karpenter_role_arn)
+# export KARPENTER_QUEUE=$(cd terraform/environments/prod && terraform output -raw karpenter_queue_name)
+#
+# helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
+#   --version 1.5.0 \
+#   --namespace kube-system \
+#   --set settings.clusterName=${CLUSTER_NAME} \
+#   --set settings.interruptionQueue=${KARPENTER_QUEUE} \
+#   --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${KARPENTER_ROLE_ARN}" \
+#   --set controller.resources.requests.cpu=100m \
+#   --set controller.resources.requests.memory=256Mi \
+#   --set controller.resources.limits.cpu=1 \
+#   --set controller.resources.limits.memory=1Gi \
+#   --wait
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# VERIFY
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# kubectl get pods -n kube-system -l app.kubernetes.io/name=karpenter
+# kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter --tail=50
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# NEXT STEPS AFTER INSTALL
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 1. Apply the NodePool and EC2NodeClass CRDs:
+#      kubectl apply -f k8s/base/karpenter/nodepool.yaml
+#
+# 2. Test provisioning:
+#      kubectl scale deployment customers-service -n petclinic-dev --replicas=20
+#      kubectl get nodes --watch   # Karpenter should add a node within 30-60s
+#      kubectl scale deployment customers-service -n petclinic-dev --replicas=1
+#
+# 3. For Spot savings in dev (after Graviton free trial expires):
+#      kubectl apply -f k8s/base/karpenter/nodepool-spot-dev.yaml

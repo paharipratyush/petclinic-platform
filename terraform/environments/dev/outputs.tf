@@ -157,3 +157,18 @@ output "github_oidc_provider_arn" {
   description = "GitHub Actions OIDC identity provider ARN"
   value       = module.github_oidc.oidc_provider_arn
 }
+
+output "karpenter_role_arn" {
+  description = "IRSA role ARN for Karpenter controller — set as serviceAccount.annotations in helm install"
+  value       = module.karpenter.karpenter_role_arn
+}
+
+output "karpenter_queue_name" {
+  description = "SQS interruption queue name — passed to Karpenter via settings.interruptionQueue"
+  value       = module.karpenter.karpenter_queue_name
+}
+
+output "karpenter_instance_profile_name" {
+  description = "EC2 instance profile name for Karpenter-launched nodes — referenced in EC2NodeClass"
+  value       = module.karpenter.karpenter_instance_profile_name
+}

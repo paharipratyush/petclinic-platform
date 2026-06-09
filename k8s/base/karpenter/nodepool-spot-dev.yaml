@@ -1,0 +1,81 @@
+# Karpenter NodePool — SPOT configuration for dev (PETPLAT-74)
+#
+# Apply this file AFTER the Graviton free trial expires to enable Spot savings.
+# The free trial runs until Dec 2026 — before that, on-demand is $0 and spot offers
+# no additional saving.
+#
+# This file REPLACES nodepool.yaml on the dev cluster (same resource name "default").
+# Do NOT apply both — apply only one at a time.
+#
+#   kubectl apply -f k8s/base/karpenter/nodepool-spot-dev.yaml
+#
+# Expected savings: ~60-70% on EC2 compute cost vs on-demand t4g pricing.
+# Spot nodes can be interrupted with 2-minute notice — the SQS interruption queue
+# (provisioned by the Terraform karpenter module) signals Karpenter to cordon and
+# drain the node gracefully before AWS terminates it.
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: default
+  labels:
+    app.kubernetes.io/name: karpenter
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: Helm
+spec:
+  template:
+    spec:
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["arm64"]
+        # spot preferred, on-demand as fallback. Karpenter automatically picks the
+        # cheapest available spot AZ/instance combination across t4g.small and t4g.medium.
+        # If spot capacity is unavailable, it falls back to on-demand without intervention.
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+        # Two instance types gives the spot scheduler more diversity, reducing interruption
+        # probability vs pinning to a single type.
+        # t4g.medium excluded — only t4g.small is in the Graviton free trial.
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["t4g.small"]
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+  # Same cost-guard limits as nodepool.yaml. Required — do not remove.
+  limits:
+    cpu: "8"
+    memory: 32Gi
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
+---
+# EC2NodeClass is identical to nodepool.yaml — included here so this file is
+# self-contained and can be applied without nodepool.yaml being present.
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+  labels:
+    app.kubernetes.io/name: karpenter
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: Helm
+spec:
+  amiSelectorTerms:
+    - alias: al2023@latest
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: petclinic-dev
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: petclinic-dev
+  instanceProfile: petclinic-dev-karpenter-node-profile
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 20Gi
+        volumeType: gp3
+        encrypted: true

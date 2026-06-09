@@ -37,6 +37,9 @@ resource "aws_subnet" "public" {
     Name                                          = "${var.project}-${var.environment}-public-${var.availability_zones[count.index]}"
     "kubernetes.io/cluster/${local.cluster_name}" = "shared"
     "kubernetes.io/role/elb"                      = "1"
+    # Karpenter uses this tag to discover which subnets to launch nodes into.
+    # If missing, EC2NodeClass subnetSelectorTerms finds no subnets and provisioning fails silently.
+    "karpenter.sh/discovery" = local.cluster_name
   })
 }
 
@@ -107,6 +110,10 @@ resource "aws_security_group" "eks_node" {
   tags = merge(local.base_tags, {
     Name                                          = "${var.project}-${var.environment}-eks-node-sg"
     "kubernetes.io/cluster/${local.cluster_name}" = "owned"
+    # Karpenter uses this tag to discover the security group to attach to new nodes.
+    # If missing, EC2NodeClass securityGroupSelectorTerms finds no SGs — nodes launch
+    # with no security group and cannot join the cluster.
+    "karpenter.sh/discovery" = local.cluster_name
   })
 
   lifecycle {

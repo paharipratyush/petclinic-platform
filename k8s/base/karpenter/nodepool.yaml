@@ -1,0 +1,96 @@
+# Karpenter NodePool + EC2NodeClass — on-demand configuration
+# PETPLAT-73: Install Karpenter on EKS
+#
+# Apply after Karpenter Helm install (see karpenter-install.yaml).
+#
+#   kubectl apply -f k8s/base/karpenter/nodepool.yaml
+#
+# Environment note: replace "petclinic-dev" with "petclinic-prod" for the prod cluster.
+# The instance profile name, subnet selector, and SG selector all use the cluster name
+# as the discovery tag value — set by the Terraform karpenter + vpc modules.
+#
+# Capacity type: on-demand only while the Graviton free trial is active (until Dec 2026).
+# Switch to spot by applying nodepool-spot-dev.yaml instead of this file.
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: default
+  labels:
+    app.kubernetes.io/name: karpenter
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: Helm
+spec:
+  template:
+    spec:
+      requirements:
+        # ARM64 only — cluster nodes are t4g (Graviton). Mixing x86 would require
+        # multi-arch images or node affinity on every pod; neither is set up here.
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["arm64"]
+        # on-demand only: Graviton free trial (750 hrs/month) expires Dec 2026.
+        # After expiry, switch to nodepool-spot-dev.yaml to regain cost savings.
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        # t4g.medium excluded — only t4g.small is in the Graviton free trial.
+        # t4g.medium triggers UnfulfillableCapacity on free-trial accounts.
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["t4g.small"]
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+  # REQUIRED: without limits Karpenter has no upper bound — a single misbehaving
+  # workload could provision dozens of nodes and incur unbounded cost.
+  limits:
+    cpu: "8"
+    memory: 32Gi
+  disruption:
+    # WhenEmptyOrUnderutilized: consolidate nodes that are empty or under-utilised.
+    # Renamed from WhenUnderutilized in Karpenter v1. consolidateAfter: 30s means
+    # Karpenter acts quickly — avoids paying for idle nodes.
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
+---
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+  labels:
+    app.kubernetes.io/name: karpenter
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: Helm
+spec:
+  # AL2023 is the default EKS-optimised AMI family for new clusters.
+  # It replaces Amazon Linux 2 and includes containerd, IMDSv2, and cgroupsv2.
+  amiSelectorTerms:
+    - alias: al2023@latest
+
+  # Karpenter discovers subnets by this tag. The tag is set on VPC public subnets
+  # by the Terraform vpc module (karpenter.sh/discovery = cluster_name).
+  # If this tag is missing on AWS subnets, Karpenter fails silently — nodes are
+  # never provisioned and no error appears in pod events.
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: petclinic-dev
+
+  # Karpenter discovers security groups by the same tag. Must match the eks_node SG.
+  # Missing tag = nodes launch with no security group = cannot join cluster.
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: petclinic-dev
+
+  # MUST match exactly the name created by terraform/modules/karpenter.
+  # A mismatch means the node launches but the kubelet cannot authenticate
+  # to the cluster — the node enters NotReady and never joins.
+  instanceProfile: petclinic-dev-karpenter-node-profile
+
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 20Gi
+        volumeType: gp3
+        encrypted: true
