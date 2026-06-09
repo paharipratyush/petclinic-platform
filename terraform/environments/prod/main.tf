@@ -461,18 +461,19 @@ resource "aws_iam_role_policy_attachment" "eso" {
   policy_arn = aws_iam_policy.eso.arn
 }
 
-# ------- E-6: App DNS record in Cloudflare (PETPLAT-31) -------
-# Leave alb_dns_name empty on first apply.
-# After scripts/install-lb-controller.sh creates the ALB, set var.alb_dns_name
-# and re-apply to create the Cloudflare CNAME pointing petclinic.{domain} → ALB.
+# ------- E-6: App DNS record in Route53 (PETPLAT-31) -------
+# Leave var.alb_dns_name empty on first apply — no DNS record is created yet.
+# scripts/install-lb-controller.sh provisions the ALB and automatically calls:
+#   terraform apply -var="alb_dns_name=<alb-hostname>"
+# which creates this record. The ALB hostname is also stored in SSM at
+# /petclinic/{env}/alb-dns-name for reference and disaster recovery.
 
-resource "cloudflare_record" "app" {
+resource "aws_route53_record" "app" {
   count = var.alb_dns_name != "" ? 1 : 0
 
-  zone_id = module.dns.cloudflare_zone_id
+  zone_id = module.dns.zone_id
   name    = "petclinic"
-  content = var.alb_dns_name
   type    = "CNAME"
-  ttl     = 1
-  proxied = false
+  ttl     = 60
+  records = [var.alb_dns_name]
 }

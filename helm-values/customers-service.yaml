@@ -1,6 +1,6 @@
 image:
   name: springcommunity/spring-petclinic-customers-service
-  tag: "316321e"
+  tag: "3.4.1"
 component: service
 service:
   port: 8081

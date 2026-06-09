@@ -127,6 +127,11 @@ output "certificate_arn" {
   value       = module.dns.certificate_arn
 }
 
+output "nameservers" {
+  description = "Route53 nameservers — configure these NS records at your domain registrar to delegate DNS to Route53"
+  value       = module.dns.nameservers
+}
+
 output "lb_controller_role_arn" {
   description = "IRSA role ARN for AWS Load Balancer Controller — passed to Helm via install-lb-controller.sh"
   value       = aws_iam_role.lb_controller.arn

@@ -17,12 +17,12 @@ variable "project" {
 }
 
 variable "domain_name" {
-  description = "Base domain name managed in Cloudflare DNS (e.g., example.com). Used for ACM certificate and Cloudflare CNAME records. Supply your own domain — no default."
+  description = "Base domain name for the platform (e.g., example.com). A Route53 hosted zone is created for this domain. After first apply, set the outputted nameservers at your domain registrar to delegate DNS to Route53."
   type        = string
 }
 
 variable "alb_dns_name" {
-  description = "DNS name of the ALB created by the Load Balancer Controller (e.g., k8s-petclinic-xxxx.eu-central-1.elb.amazonaws.com). Leave empty on first apply; populate after the Ingress creates the ALB and re-apply to create the Cloudflare CNAME."
+  description = "ALB DNS name override — only needed if you want to bypass SSM. Normally leave empty: scripts/install-lb-controller.sh writes the ALB hostname to SSM after provisioning, and re-running terraform apply picks it up automatically."
   type        = string
   default     = ""
 }

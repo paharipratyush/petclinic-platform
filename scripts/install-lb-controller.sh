@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Install AWS Load Balancer Controller on EKS and apply the Ingress manifest.
+# Install AWS Load Balancer Controller on EKS and create the app DNS record.
 #
 # Prerequisites:
-#   - kubectl configured for the target cluster (run: aws eks update-kubeconfig --name petclinic-{env} --region eu-central-1)
+#   - kubectl configured for the target cluster
+#     Run: aws eks update-kubeconfig --name petclinic-{env} --region eu-central-1
 #   - helm installed (>= 3.x)
 #   - terraform apply completed for the target environment (IRSA role + cert must exist)
-#   - CLOUDFLARE_API_TOKEN exported in your shell (Zone:Read + DNS:Edit permissions on praty.dev)
+#   - domain_name variable set (e.g. in terraform.tfvars or TF_VAR_domain_name)
 #
-# Usage (from project root — works on WSL, Git Bash, Linux, macOS):
+# Usage (from project root):
 #   bash scripts/install-lb-controller.sh --env dev
 #   bash scripts/install-lb-controller.sh --env prod
 
@@ -58,6 +59,7 @@ echo "  ALB SG ID:    $ALB_SG_ID"
 echo "  VPC ID:       $VPC_ID"
 
 NAMESPACE="petclinic-$ENV"
+REGION="eu-central-1"
 
 echo ""
 echo "==> Step 1 — Add EKS Helm repository..."
@@ -73,7 +75,7 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
   --set serviceAccount.create=true \
   --set serviceAccount.name=aws-load-balancer-controller \
   --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$ROLE_ARN" \
-  --set region=eu-central-1 \
+  --set region="$REGION" \
   --set vpcId="$VPC_ID" \
   --wait
 
@@ -91,7 +93,7 @@ echo "==> Step 5 — Ensure petclinic namespaces exist..."
 kubectl apply -f "$REPO_ROOT/k8s/base/namespaces/namespaces.yaml"
 
 echo ""
-echo "==> Step 6 — Apply Ingress manifest to $NAMESPACE with cert ARN substituted..."
+echo "==> Step 6 — Apply Ingress manifest with cert ARN and SG substituted..."
 sed \
   -e "s|CERTIFICATE_ARN_PLACEHOLDER|$CERT_ARN|g" \
   -e "s|ALB_SG_PLACEHOLDER|$ALB_SG_ID|g" \
@@ -100,32 +102,56 @@ sed \
 
 echo ""
 echo "==> Step 7 — Wait for ALB to be provisioned (this takes ~2 minutes)..."
-echo "    Waiting for Ingress to get an ALB address..."
+ALB_ADDRESS=""
 for i in $(seq 1 24); do
   ALB_ADDRESS=$(kubectl get ingress petclinic-ingress -n "$NAMESPACE" \
     -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
   if [[ -n "$ALB_ADDRESS" ]]; then
     echo ""
-    echo "==> ALB provisioned: $ALB_ADDRESS"
-    APP_URL=$(tf -chdir="$TF_DIR" output -raw app_url | sed 's|https://||')
-    echo ""
-    echo "==> NEXT STEP — Create the Cloudflare CNAME record:"
-    echo "    Pass the ALB DNS name as a Terraform variable, then:"
-    echo ""
-    echo "    cd terraform/environments/$ENV"
-    echo "    terraform plan -var=\"alb_dns_name=$ALB_ADDRESS\" -out plan.out"
-    echo "    terraform apply plan.out"
-    echo ""
-    echo "    After apply, verify DNS resolution:"
-    echo "    nslookup $APP_URL"
-    echo "    curl -I https://$APP_URL"
-    exit 0
+    echo "  ALB provisioned: $ALB_ADDRESS"
+    break
   fi
   echo "    Waiting... ($((i * 5))s elapsed)"
   sleep 5
 done
 
+if [[ -z "$ALB_ADDRESS" ]]; then
+  echo ""
+  echo "ERROR: ALB address not available after 2 minutes. Check controller logs:"
+  echo "  kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller"
+  echo "  kubectl describe ingress petclinic-ingress -n $NAMESPACE"
+  exit 1
+fi
+
 echo ""
-echo "WARNING: ALB address not available after 2 minutes. Check controller logs:"
-echo "  kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller"
-echo "  kubectl describe ingress petclinic-ingress -n $NAMESPACE"
+echo "==> Step 8 — Store ALB DNS in SSM Parameter Store (for disaster recovery)..."
+aws ssm put-parameter \
+  --name "/petclinic/$ENV/alb-dns-name" \
+  --value "$ALB_ADDRESS" \
+  --type String \
+  --overwrite \
+  --region "$REGION" \
+  --description "ALB DNS hostname for petclinic-$ENV (managed by install-lb-controller.sh)" \
+  > /dev/null
+echo "  Stored at: /petclinic/$ENV/alb-dns-name"
+
+echo ""
+echo "==> Step 9 — Apply Terraform to create/update Route53 DNS CNAME record..."
+tf -chdir="$TF_DIR" plan -var="alb_dns_name=$ALB_ADDRESS" -out /tmp/dns-update.plan
+tf -chdir="$TF_DIR" apply /tmp/dns-update.plan
+rm -f /tmp/dns-update.plan
+
+echo ""
+echo "==========================================================="
+echo "  AWS Load Balancer Controller installed."
+echo ""
+APP_URL=$(tf -chdir="$TF_DIR" output -raw app_url 2>/dev/null || echo "https://petclinic-$ENV.<your-domain>")
+echo "  Application URL: $APP_URL"
+echo ""
+echo "  NAMESERVERS — set these at your domain registrar:"
+tf -chdir="$TF_DIR" output -json nameservers 2>/dev/null \
+  | tr -d '[]"' | tr ',' '\n' | sed 's/^[[:space:]]*/  /' | grep -v '^[[:space:]]*$' || true
+echo ""
+echo "  DNS will work as soon as NS records propagate (can take up to 48h,"
+echo "  but usually < 5 minutes if changed from Cloudflare to Route53)."
+echo "==========================================================="
