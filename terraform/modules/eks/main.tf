@@ -143,6 +143,15 @@ resource "aws_launch_template" "node" {
     }
   }
 
+  # Enforce IMDSv2 — prevents unauthenticated metadata access from pods.
+  # hop_limit=1: only the direct caller (the EC2 instance) can reach IMDS,
+  # blocking pods from reaching it via the network hop through the host.
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
   tag_specifications {
     resource_type = "instance"
     tags          = merge(local.base_tags, { Name = "${local.cluster_name}-node" })

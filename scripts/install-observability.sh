@@ -8,21 +8,14 @@
 # Prerequisites:
 #   - kubectl configured for the target cluster
 #   - EKS cluster running with EBS CSI driver (for gp2 PVCs)
-#   - AWS CLI authenticated (used to auto-load SMTP credentials from Secrets Manager)
-#   - jq installed (for Secrets Manager JSON parsing)
+#   - External Secrets Operator (ESO) installed and ClusterSecretStore ready
 #
 # SMTP credentials (required for email alerts):
-#   The script auto-loads from AWS Secrets Manager: petclinic/alertmanager-smtp
-#   Secret format: {"email":"you@gmail.com","password":"xxxx xxxx xxxx xxxx"}
-#
-#   To create the secret (first-time setup):
+#   ESO pulls credentials automatically from AWS Secrets Manager.
+#   Create the secret BEFORE running this script:
 #     aws secretsmanager create-secret \
 #       --name petclinic/alertmanager-smtp \
 #       --secret-string '{"email":"you@gmail.com","password":"xxxx xxxx xxxx xxxx"}'
-#
-#   Override via env vars (takes precedence over Secrets Manager):
-#     export SMTP_EMAIL="you@gmail.com"
-#     export SMTP_PASSWORD="xxxx xxxx xxxx xxxx"
 #
 #   NEVER hardcode credentials here or pass them on the command line.
 #
@@ -53,54 +46,22 @@ done
 [[ -z "$ENV" ]] && usage
 [[ "$ENV" != "dev" && "$ENV" != "prod" ]] && { echo "ERROR: --env must be 'dev' or 'prod'"; exit 1; }
 
-# ── Load SMTP credentials ─────────────────────────────────────────────────────
-# Prefer explicit env vars; fall back to AWS Secrets Manager auto-load.
-SMTP_EMAIL="${SMTP_EMAIL:-""}"
-SMTP_PASSWORD="${SMTP_PASSWORD:-""}"
-
-if [[ -z "$SMTP_EMAIL" || -z "$SMTP_PASSWORD" ]]; then
-  echo "==> SMTP_EMAIL/SMTP_PASSWORD not set — attempting auto-load from Secrets Manager..."
-  if command -v aws &>/dev/null && command -v jq &>/dev/null; then
-    SECRET_JSON=$(aws secretsmanager get-secret-value \
-      --secret-id "petclinic/alertmanager-smtp" \
-      --query SecretString --output text 2>/dev/null || echo "")
-    if [[ -n "$SECRET_JSON" ]]; then
-      [[ -z "$SMTP_EMAIL" ]]    && SMTP_EMAIL="$(echo "$SECRET_JSON"    | jq -r '.email')"
-      [[ -z "$SMTP_PASSWORD" ]] && SMTP_PASSWORD="$(echo "$SECRET_JSON" | jq -r '.password')"
-      echo "  Loaded from Secrets Manager: petclinic/alertmanager-smtp"
-    else
-      echo "  WARNING: petclinic/alertmanager-smtp not found in Secrets Manager."
-      echo "  Email alerts will remain disabled (placeholder in secret)."
-      echo "  Create it with:"
-      echo "    aws secretsmanager create-secret \\"
-      echo "      --name petclinic/alertmanager-smtp \\"
-      echo "      --secret-string '{\"email\":\"you@gmail.com\",\"password\":\"xxxx xxxx xxxx xxxx\"}'"
-    fi
-  else
-    echo "  WARNING: aws or jq not found — cannot auto-load SMTP credentials."
-  fi
-fi
-
-SMTP_CONFIGURED=false
-if [[ -n "$SMTP_EMAIL" && -n "$SMTP_PASSWORD" && "$SMTP_PASSWORD" != "REPLACE_WITH_SMTP_PASSWORD" ]]; then
-  SMTP_CONFIGURED=true
-fi
-
 echo "============================================================"
 echo "  Installing Observability Stack (raw K8s manifests)"
 echo "  Environment:  $ENV"
 echo "  Namespaces:   monitoring, tracing"
-if [[ "$SMTP_CONFIGURED" == "true" ]]; then
-  echo "  SMTP:         configured for ${SMTP_EMAIL} (will patch secret after apply)"
-else
-  echo "  SMTP:         not configured — email alerts disabled"
-fi
+echo "  SMTP:         provisioned by ESO from petclinic/alertmanager-smtp"
 echo "============================================================"
 echo ""
 
 # ── Step 1: Create namespaces ─────────────────────────────────────────────────
 echo "==> Step 1 — Creating monitoring and tracing namespaces..."
 kubectl apply -f "$OBS_DIR/namespace.yaml"
+
+# ── Step 1b: Apply monitoring/tracing network policies ────────────────────────
+echo "==> Step 1b — Applying network policies for monitoring and tracing namespaces..."
+kubectl apply -f "$OBS_DIR/network-policies.yaml"
+echo "  Network policies applied."
 
 # ── Step 2: Install PrometheusRule CRD ────────────────────────────────────────
 echo ""
@@ -118,23 +79,16 @@ echo "  Prometheus running."
 # ── Step 4: Deploy Alertmanager ───────────────────────────────────────────────
 echo ""
 echo "==> Step 4 — Deploying Alertmanager..."
+# Apply the ExternalSecret — ESO creates alertmanager-config Secret from Secrets Manager.
+# Prereq: petclinic/alertmanager-smtp must exist in Secrets Manager before this step.
+kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/alertmanager-config.yaml"
+echo "  Waiting for ESO to create alertmanager-config secret..."
+kubectl wait externalsecret/alertmanager-config -n monitoring \
+  --for=condition=Ready --timeout=120s || {
+  echo "  WARNING: alertmanager-config ExternalSecret not Ready within 120s."
+  echo "  Ensure petclinic/alertmanager-smtp exists in Secrets Manager."
+}
 kubectl apply -f "$OBS_DIR/alertmanager.yaml"
-
-if [[ "$SMTP_CONFIGURED" == "true" ]]; then
-  echo "  Patching alertmanager-config secret with SMTP credentials..."
-  CURRENT_CONFIG="$(kubectl -n monitoring get secret alertmanager-config \
-    -o jsonpath='{.data.alertmanager\.yml}' | base64 -d)"
-  NEW_CONFIG="$(printf '%s' "$CURRENT_CONFIG" \
-    | sed "s|REPLACE_WITH_ALERT_EMAIL|${SMTP_EMAIL}|g" \
-    | sed "s|REPLACE_WITH_SMTP_PASSWORD|${SMTP_PASSWORD}|g")"
-  ENCODED="$(printf '%s' "$NEW_CONFIG" | base64 | tr -d '\n')"
-  kubectl -n monitoring patch secret alertmanager-config \
-    --type=json \
-    -p="[{\"op\":\"replace\",\"path\":\"/data/alertmanager.yml\",\"value\":\"$ENCODED\"}]"
-  unset ENCODED NEW_CONFIG CURRENT_CONFIG
-  echo "  SMTP credentials configured for ${SMTP_EMAIL}."
-fi
-
 kubectl rollout status deployment/alertmanager -n monitoring --timeout=120s
 echo "  Alertmanager running."
 
@@ -213,13 +167,12 @@ echo "  Zipkin:"
 echo "    kubectl port-forward svc/zipkin -n tracing 9411:9411"
 echo "    open: http://localhost:9411"
 echo ""
-if [[ "$SMTP_CONFIGURED" != "true" ]]; then
-  echo "  NOTE: Email alerts are not active (SMTP credentials not configured)."
-  echo "  To enable, store credentials in Secrets Manager and re-run:"
-  echo "    aws secretsmanager create-secret \\"
-  echo "      --name petclinic/alertmanager-smtp \\"
-  echo "      --secret-string '{\"email\":\"you@gmail.com\",\"password\":\"xxxx xxxx xxxx xxxx\"}'"
-  echo "    bash $0 --env $ENV"
-  echo ""
-fi
+echo "  NOTE: Email alerts require petclinic/alertmanager-smtp in Secrets Manager."
+echo "  If ESO ExternalSecret shows NotReady, create it with:"
+echo "    aws secretsmanager create-secret \\"
+echo "      --name petclinic/alertmanager-smtp \\"
+echo "      --secret-string '{\"email\":\"you@gmail.com\",\"password\":\"xxxx xxxx xxxx xxxx\"}'"
+echo "  ESO refreshes every 1h — or force it with:"
+echo "    kubectl annotate externalsecret alertmanager-config -n monitoring force-sync=\$(date +%s) --overwrite"
+echo ""
 echo "==========================================================="

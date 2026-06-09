@@ -14,6 +14,7 @@ Architecture overview for the Spring Petclinic Microservices platform on AWS.
 4. [Network Design](#network-design)
 5. [Environment Differences](#environment-differences)
 6. [Technology Decisions](#technology-decisions)
+7. [Monthly Cost Estimate](#monthly-cost-estimate)
 
 ---
 
@@ -192,3 +193,32 @@ DNS:
 | Node scaling | Karpenter (planned E-14) | ADR-0009 |
 
 See `docs/adr/` for full decision records.
+
+---
+
+## Monthly Cost Estimate
+
+All instance choices maximize AWS free tier / Graviton trial eligibility. This is a learning project.
+
+| Resource | Dev (~) | Prod (~) | Free Tier Note |
+|----------|---------|----------|---------------|
+| EKS Control Plane | $73 | $73 | No free tier — unavoidable |
+| EC2 Nodes (2× t4g.small, ARM64) | $0 | $0 | Graviton free trial (750 hrs/mo, until Dec 2026) |
+| RDS MySQL (db.t4g.micro) | $0 | $0 | RDS free tier (750 hrs/mo, 12 months) |
+| ALB | $0 | $0 | Free tier (750 hrs/mo, 12 months) |
+| S3 + DynamoDB (Terraform state) | ~$1 | ~$1 | Mostly free tier |
+| ECR Storage | ~$1 | ~$1 | 500 MB free; $0.10/GB/month beyond |
+| EBS (PVs for Prometheus, Grafana, Loki) | ~$2 | ~$2 | 30 GB gp2 free (12 months) |
+| Cloudflare DNS | $0 | $0 | Free — no Route 53 hosted zone needed |
+| Secrets Manager (~3 secrets) | ~$1 | ~$1 | $0.40/secret/month |
+| Data Transfer | ~$1 | ~$1 | 100 GB/mo free |
+| **Total** | **~$80/mo** | **~$80/mo** | EKS control plane dominates |
+
+**No NAT Gateway cost** — the all-public subnet design saves ~$35–65/mo vs a standard VPC with NAT.
+
+**Cost optimization tips:**
+- Run `terraform destroy` after each session to eliminate EKS control plane charges (~$0.10/hr = ~$17/mo for 10 hrs/week)
+- After the Graviton free trial expires, enable Karpenter spot instances (dev NodePool) for 60–70% compute savings
+- Budget alerts fire at 50%, 80%, and 100% of $100/month per environment (configured in Terraform)
+
+See [`docs/technical-spec.md § Scaling and Cost`](technical-spec.md#scaling-and-cost) for the full cost breakdown and spot instance configuration.

@@ -709,7 +709,7 @@ containers:
       allowPrivilegeEscalation: false
       capabilities:
         drop: ["ALL"]
-      readOnlyRootFilesystem: false  # Spring Boot needs /tmp for file uploads and caching
+      readOnlyRootFilesystem: true   # emptyDir volume at /tmp handles Spring Boot temp files
 ```
 
 ### Manifest File Structure
@@ -805,12 +805,14 @@ GitHub Actions handles **CI only** (build, test, push images). **ArgoCD handles 
 
 ### Workflows
 
-| Workflow | File | Trigger | What it does |
-|----------|------|---------|--------------|
-| Build & Push | `.github/workflows/build-push.yml` | Push to `main` | Build ARM64 images, Trivy scan, push to ECR |
-| Update Image Tags | `.github/workflows/update-image-tags.yml` | After build-push succeeds | Commits new image tag to `helm-values/` → ArgoCD picks up |
+| Workflow | Repo | File | Trigger | What it does |
+|----------|------|------|---------|--------------|
+| Build & Push | **Application repo fork** | `.github/workflows/build-push.yml` | Push to `main` | Build ARM64 images, Trivy scan, push to ECR; fires `repository_dispatch` to platform repo |
+| Update Image Tags | **Platform repo** | `.github/workflows/update-image-tags.yml` | `repository_dispatch: app-image-built` | Commits new image tag to `helm-values/` → ArgoCD picks up |
 
 > **No deploy workflows.** ArgoCD watches the Git repo for changes to `helm-values/` and automatically syncs (dev) or waits for manual approval (prod).
+>
+> **Two-repo design (PETPLAT-49):** `build-push.yml` lives in the application repo fork (spring-petclinic-microservices) because it builds application code. The platform repo only contains `update-image-tags.yml`.
 
 ### OIDC Federation (No Long-Lived Credentials)
 
@@ -1436,7 +1438,7 @@ metadata:
   name: "{service}-{env}"
   namespace: argocd
 spec:
-  project: default
+  project: "{env}"   # dev or prod — must match AppProject name
   source:
     repoURL: https://github.com/{your-username}/petclinic-platform.git
     targetRevision: main

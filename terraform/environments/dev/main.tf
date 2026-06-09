@@ -210,6 +210,11 @@ data "aws_iam_policy_document" "lb_controller" {
       "elasticloadbalancing:ModifyRule",
     ]
     resources = ["*"]
+    condition {
+      test     = "Null"
+      variable = "aws:ResourceTag/elbv2.k8s.aws/cluster"
+      values   = ["false"]
+    }
   }
 
   statement {
@@ -388,9 +393,10 @@ data "aws_caller_identity" "current" {}
 module "secrets" {
   source = "../../modules/secrets"
 
-  project                 = var.project
-  environment             = var.environment
-  openai_api_key          = var.openai_api_key
+  project                = var.project
+  environment            = var.environment
+  openai_api_key         = var.openai_api_key
+  grafana_admin_password = var.grafana_admin_password
   recovery_window_in_days = 0
 
   tags = {

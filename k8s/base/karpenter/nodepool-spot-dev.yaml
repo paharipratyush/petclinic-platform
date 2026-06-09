@@ -79,3 +79,10 @@ spec:
         volumeSize: 20Gi
         volumeType: gp3
         encrypted: true
+
+  # Enforce IMDSv2 — blocks unauthenticated IMDS access from pods via SSRF.
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 1
+    httpTokens: required

@@ -67,7 +67,7 @@ DOCKERFILE="${APP_REPO}/docker/Dockerfile"
 
 # ── Step 1: Build JARs ────────────────────────────────────────────────────────
 # Tests are skipped here because this is a manual push helper, not CI.
-# The CI pipeline (E-10 / .github/workflows/build-push.yml) runs the full
+# The CI pipeline (E-10 / build-push.yml in the application repo fork) runs the full
 # test suite before building images — do not bypass that gate in CI.
 echo "=== [1/4] Building JARs with Maven (skipping tests) ==="
 cd "${APP_REPO}"

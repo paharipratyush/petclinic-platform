@@ -4,6 +4,8 @@ metadata:
   name: monitoring
   labels:
     app.kubernetes.io/managed-by: kubectl
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
 ---
 apiVersion: v1
 kind: Namespace
@@ -11,3 +13,5 @@ metadata:
   name: tracing
   labels:
     app.kubernetes.io/managed-by: kubectl
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted

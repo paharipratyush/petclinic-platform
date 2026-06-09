@@ -6,13 +6,29 @@ paths:
 
 # GitHub Actions Workflow Rules
 
-## Workflow Structure
+## Two-Repo CI/CD Architecture
+
+The CI/CD pipeline spans two repositories:
+
+| Workflow | Repo | File |
+|----------|------|------|
+| Build & Push (CI) | **Application repo fork** (`spring-petclinic-microservices`) | `.github/workflows/build-push.yml` |
+| Update Image Tags (CD trigger) | **Platform repo** (this repo) | `.github/workflows/update-image-tags.yml` |
+
+**This platform repo contains only `update-image-tags.yml`.** The `build-push.yml` lives in the application repo fork — see PETPLAT-49.
+
+### Platform Repo Workflow Structure
 
 ```
 .github/workflows/
-├── build-push.yml          # Build Docker images, push to ECR
-├── update-image-tags.yml   # Commit image tag updates → ArgoCD deploys
-└── reusable/               # Reusable workflow templates
+└── update-image-tags.yml   # Triggered by repository_dispatch from app repo → commits image tags → ArgoCD deploys
+```
+
+### Application Repo Fork Workflow Structure
+
+```
+.github/workflows/
+└── build-push.yml          # Builds ARM64 images, Trivy scan, pushes to ECR, fires repository_dispatch
 ```
 
 ## Architecture: CI (GitHub Actions) + CD (ArgoCD)
@@ -38,8 +54,8 @@ GitHub Actions handles **CI only**. ArgoCD handles **CD**. CI never runs `kubect
 
 ## Trigger Patterns
 
-- `build-push.yml`: trigger on push to `main` branch, path filter on application code
-- `update-image-tags.yml`: trigger after successful build-push (`workflow_run`), commits new SHA tag to helm-values
+- `build-push.yml` (application repo fork): `on: push: branches: [main]` with `dorny/paths-filter` to detect changed service directories; fires `repository_dispatch` type `app-image-built` to the platform repo
+- `update-image-tags.yml` (platform repo): `on: repository_dispatch: types: [app-image-built]`; receives SHA + service list in payload, updates `helm-values/` and commits
 
 ## GitHub Secrets
 

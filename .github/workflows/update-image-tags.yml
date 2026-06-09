@@ -5,50 +5,42 @@ on:
     types: [app-image-built]
 
 permissions:
-  contents: write
+  contents: none
 
 jobs:
+  validate:
+    name: Validate payload
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.validate.outputs.sha }}
+      services: ${{ steps.validate.outputs.services }}
+    steps:
+      - name: Validate and sanitize payload inputs
+        id: validate
+        env:
+          SHA: ${{ github.event.client_payload.sha }}
+          SERVICES: ${{ github.event.client_payload.services }}
+        run: |
+          # Reject if SHA is not a valid hex string (7-40 chars) — prevents shell injection
+          if ! [[ "${SHA}" =~ ^[a-f0-9]{7,40}$ ]]; then
+            echo "ERROR: invalid SHA format '${SHA}'" >&2
+            exit 1
+          fi
+          # Reject if SERVICES contains anything other than lowercase alphanumeric, hyphens, underscores, spaces
+          if ! [[ "${SERVICES}" =~ ^[a-z0-9_-]+([[:space:]][a-z0-9_-]+)*$ ]]; then
+            echo "ERROR: invalid SERVICES format '${SERVICES}'" >&2
+            exit 1
+          fi
+          echo "Payload validated: SHA=${SHA}, SERVICES=${SERVICES}"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "services=${SERVICES}" >> "$GITHUB_OUTPUT"
+
   update-tags:
     name: Update helm-values image tags
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout platform repo
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install yq
-        run: |
-          sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-
-      - name: Update image.tag in helm-values
-        env:
-          SHA: ${{ github.event.client_payload.sha }}
-          SERVICES: ${{ github.event.client_payload.services }}
-        run: |
-          for service in ${SERVICES}; do
-            if [ -f "helm-values/${service}.yaml" ]; then
-              yq -i ".image.tag = \"${SHA}\"" "helm-values/${service}.yaml"
-              echo "Updated helm-values/${service}.yaml → image.tag=${SHA}"
-            else
-              echo "WARNING: helm-values/${service}.yaml not found, skipping"
-            fi
-          done
-
-      - name: Commit and push updated values
-        env:
-          SHA: ${{ github.event.client_payload.sha }}
-          SERVICES: ${{ github.event.client_payload.services }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add helm-values/
-          if git diff --staged --quiet; then
-            echo "No helm-values changes to commit (tags already up to date)"
-          else
-            git commit -m "ci: update image tags to ${SHA} (${SERVICES})"
-            git push
-          fi
+    needs: validate
+    uses: ./.github/workflows/reusable/update-tags.yml
+    permissions:
+      contents: write
+    with:
+      sha: ${{ needs.validate.outputs.sha }}
+      services: ${{ needs.validate.outputs.services }}

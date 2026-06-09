@@ -1,0 +1,69 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: petclinic
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: secrets
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: alertmanager-config
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        alertmanager.yml: |
+          global:
+            smtp_smarthost: smtp.gmail.com:587
+            smtp_from: "{{ .smtp_email }}"
+            smtp_auth_username: "{{ .smtp_email }}"
+            smtp_auth_password: "{{ .smtp_password }}"
+            smtp_require_tls: true
+
+          route:
+            receiver: email-default
+            group_by: [alertname, namespace, severity]
+            group_wait: 30s
+            group_interval: 5m
+            repeat_interval: 4h
+            routes:
+              - matchers:
+                  - severity=critical
+                receiver: email-critical
+                group_wait: 0s
+                group_interval: 1m
+                repeat_interval: 1h
+
+          receivers:
+            - name: email-default
+              email_configs:
+                - to: "{{ .smtp_email }}"
+                  send_resolved: true
+
+            - name: email-critical
+              email_configs:
+                - to: "{{ .smtp_email }}"
+                  send_resolved: true
+
+          inhibit_rules:
+            - source_matchers:
+                - severity=critical
+              target_matchers:
+                - severity=warning
+              equal: [alertname, namespace]
+  data:
+    - secretKey: smtp_email
+      remoteRef:
+        key: petclinic/alertmanager-smtp
+        property: email
+    - secretKey: smtp_password
+      remoteRef:
+        key: petclinic/alertmanager-smtp
+        property: password

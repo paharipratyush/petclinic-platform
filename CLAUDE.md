@@ -13,7 +13,7 @@ helm-values/                         # Per-service YAML + per-env (dev.yaml, pro
 k8s/base/                            # Namespaces, external-secrets CRs
 k8s/argocd/install/                  # ArgoCD installation manifests
 k8s/argocd/applications/{dev,prod}/  # ArgoCD Application CRDs
-.github/workflows/                    # CI pipelines (build + push only, ArgoCD handles CD)
+.github/workflows/                    # Platform CI: update-image-tags.yml only (build-push.yml lives in the application repo fork)
 scripts/                             # Operational scripts
 docs/                                # Architecture docs, runbooks, ADRs
 ```
@@ -140,6 +140,9 @@ Five MCP servers configured at the project level:
 ## CI/CD Pipeline Conventions
 
 - **Architecture:** CI (GitHub Actions) + CD (ArgoCD). GitHub Actions NEVER deploys directly.
+- **Two-repo split:**
+  - `build-push.yml` lives in the **application repo fork** (spring-petclinic-microservices) — builds ARM64 images, Trivy scan, pushes to ECR, fires `repository_dispatch`
+  - `update-image-tags.yml` lives in **this platform repo** — receives `repository_dispatch`, commits new image tag to `helm-values/` → ArgoCD deploys
 - **CI Platform:** GitHub Actions, OIDC federation to AWS (no long-lived credentials)
 - **Image tags:** Commit SHA (`${GITHUB_SHA::7}`), never `latest`
 - **ECR login:** `aws ecr get-login-password --region eu-central-1` (same region as infrastructure)

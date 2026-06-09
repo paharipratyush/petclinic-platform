@@ -15,7 +15,9 @@
 8. [Zipkin — Distributed Tracing](#zipkin--distributed-tracing)
 9. [Alert Rules Reference](#alert-rules-reference)
 10. [Verifying the Stack End-to-End](#verifying-the-stack-end-to-end)
-11. [Enabling Email Alerts](#enabling-email-alerts)
+11. [Silencing and Managing Alerts](#silencing-and-managing-alerts)
+12. [Adding or Modifying Alert Rules](#adding-or-modifying-alert-rules)
+13. [Enabling Email Alerts](#enabling-email-alerts)
 
 ---
 
@@ -343,6 +345,107 @@ Expected output for a healthy stack:
 - 5 Prometheus targets, all `"health": "up"`
 - Loki: `"ready"`
 - Zipkin: `"UP"`
+
+---
+
+## Silencing and Managing Alerts
+
+### Silence an Alert in Alertmanager
+
+Silences suppress notifications for a matching alert without deleting the rule. Use during maintenance windows or while investigating a known issue.
+
+```bash
+# Open Alertmanager UI
+kubectl port-forward svc/alertmanager -n monitoring 9093:9093
+# http://localhost:9093 → Silences → + New Silence
+# Set: Matchers (e.g., alertname=HighLatency), Start/End time, Comment
+```
+
+To create a silence via API (2-hour window for HighLatency):
+```bash
+START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+END=$(date -u -d "+2 hours" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+     || date -u -v+2H +%Y-%m-%dT%H:%M:%SZ)  # Linux / macOS
+
+curl -X POST http://localhost:9093/api/v2/silences \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"matchers\": [{\"name\":\"alertname\",\"value\":\"HighLatency\",\"isRegex\":false}],
+    \"startsAt\": \"${START}\",
+    \"endsAt\": \"${END}\",
+    \"comment\": \"Maintenance window — scaling up nodes\",
+    \"createdBy\": \"ops-engineer\"
+  }"
+# Returns: {"silenceID":"<uuid>"}
+```
+
+To list and expire an existing silence:
+```bash
+# List active silences
+curl -s http://localhost:9093/api/v2/silences | jq '.[].id'
+
+# Expire (delete) a silence
+curl -X DELETE http://localhost:9093/api/v2/silence/{silenceID}
+```
+
+**Acknowledgement:** Alertmanager has no native "acknowledge" concept. A short silence (1 hour) serves the same purpose — it stops repeat pages while the on-call engineer investigates.
+
+---
+
+## Adding or Modifying Alert Rules
+
+### Prometheus Rules
+
+Alert rules are defined in the `prometheus-alerts` ConfigMap inside `k8s/base/observability/prometheus.yaml`. Prometheus hot-reloads rules from the mounted ConfigMap without a restart.
+
+1. Edit the ConfigMap in `k8s/base/observability/prometheus.yaml`, find the `groups[0].rules` list, and add a rule:
+
+   ```yaml
+   - alert: MyNewAlert
+     expr: <promql_expression>
+     for: 5m
+     labels:
+       severity: warning      # critical | warning
+     annotations:
+       summary: "Short description"
+       description: "Longer description with {{ $labels.job }}"
+   ```
+
+2. Apply and verify:
+   ```bash
+   kubectl apply -f k8s/base/observability/prometheus.yaml
+   # Wait ~30s for Prometheus to reload
+   kubectl port-forward svc/prometheus -n monitoring 9090:9090
+   # http://localhost:9090/rules  ← new rule should appear
+   # http://localhost:9090/alerts ← shows state: inactive / pending / firing
+   ```
+
+### Loki Alert Rules
+
+Loki alert rules are in the `loki-alert-rules` ConfigMap inside `k8s/base/observability/loki.yaml`.
+
+1. Add a rule under `groups[0].rules`:
+
+   ```yaml
+   - alert: MyLogAlert
+     expr: |
+       count_over_time({namespace=~"petclinic-.*"} |= "my-error-pattern" [5m]) > 0
+     for: 1m
+     labels:
+       severity: warning
+     annotations:
+       summary: "Error pattern detected in petclinic logs"
+   ```
+
+2. Apply:
+   ```bash
+   kubectl apply -f k8s/base/observability/loki.yaml
+   # Loki ruler reloads within ~30 seconds
+   ```
+
+### Alertmanager Routing Rules
+
+To add a new receiver or routing rule, edit the `alertmanager-config` Secret in `k8s/base/observability/alertmanager.yaml`. The configuration is base64-encoded when deployed; `install-observability.sh` handles encoding. Edit the plain-text source in the script's `ALERTMANAGER_CONFIG` variable, then re-run the install script.
 
 ---
 

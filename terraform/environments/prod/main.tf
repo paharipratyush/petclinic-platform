@@ -49,11 +49,12 @@ module "rds" {
   security_group_id = module.vpc.rds_sg_id
 
   # db.t4g.micro (ARM/Graviton) — RDS free tier eligible (750 hrs/month, 12 months)
-  # Note: in real production use db.r7g.large with Multi-AZ, gp3 storage, deletion_protection=true
+  # Note: in real production use db.r7g.large with Multi-AZ, gp3 storage
   instance_class          = "db.t4g.micro"
   multi_az                = false
   skip_final_snapshot     = false
   backup_retention_period = 30
+  deletion_protection     = true
 }
 
 module "eks" {
@@ -208,6 +209,11 @@ data "aws_iam_policy_document" "lb_controller" {
       "elasticloadbalancing:ModifyRule",
     ]
     resources = ["*"]
+    condition {
+      test     = "Null"
+      variable = "aws:ResourceTag/elbv2.k8s.aws/cluster"
+      values   = ["false"]
+    }
   }
 
   statement {
@@ -389,6 +395,7 @@ module "secrets" {
   project                  = var.project
   environment              = var.environment
   openai_api_key           = var.openai_api_key
+  grafana_admin_password   = var.grafana_admin_password
   recovery_window_in_days  = 30
 
   tags = {

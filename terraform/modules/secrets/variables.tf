@@ -15,6 +15,12 @@ variable "openai_api_key" {
   sensitive   = true
 }
 
+variable "grafana_admin_password" {
+  description = "Grafana admin password. Stored in Secrets Manager at petclinic/{env}/grafana-admin."
+  type        = string
+  sensitive   = true
+}
+
 variable "recovery_window_in_days" {
   description = "Days Secrets Manager waits before permanently deleting a secret. Use 0 for dev (force delete — allows same-day destroy+recreate), 30 for prod (disaster recovery compliance). Valid: 0 or 7–30."
   type        = number

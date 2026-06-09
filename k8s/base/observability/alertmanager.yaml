@@ -1,68 +1,10 @@
 ---
-# Alertmanager config — SMTP credentials are placeholders in Git.
-# The install-observability.sh script patches this secret at deploy time
-# by reading real values from AWS Secrets Manager (petclinic/alertmanager-smtp).
-#
-# To configure manually:
-#   1. Store credentials in Secrets Manager:
-#        aws secretsmanager create-secret \
-#          --name petclinic/alertmanager-smtp \
-#          --secret-string '{"email":"you@gmail.com","password":"xxxx xxxx xxxx xxxx"}'
-#   2. Run the install script — it auto-loads and patches:
-#        bash scripts/install-observability.sh --env dev
-#   3. Or patch directly:
-#        SMTP_EMAIL=you@gmail.com SMTP_PASSWORD="xxxx xxxx xxxx xxxx" \
-#          bash scripts/install-observability.sh --env dev
-apiVersion: v1
-kind: Secret
-metadata:
-  name: alertmanager-config
-  namespace: monitoring
-  labels:
-    app.kubernetes.io/name: alertmanager
-    app.kubernetes.io/part-of: petclinic
-    app.kubernetes.io/managed-by: kubectl
-type: Opaque
-stringData:
-  alertmanager.yml: |
-    global:
-      smtp_smarthost: smtp.gmail.com:587
-      smtp_from: REPLACE_WITH_ALERT_EMAIL
-      smtp_auth_username: REPLACE_WITH_ALERT_EMAIL
-      smtp_auth_password: REPLACE_WITH_SMTP_PASSWORD
-      smtp_require_tls: true
-
-    route:
-      receiver: email-default
-      group_by: [alertname, namespace, severity]
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 4h
-      routes:
-        - matchers:
-            - severity=critical
-          receiver: email-critical
-          group_wait: 0s
-          group_interval: 1m
-          repeat_interval: 1h
-
-    receivers:
-      - name: email-default
-        email_configs:
-          - to: REPLACE_WITH_ALERT_EMAIL
-            send_resolved: true
-
-      - name: email-critical
-        email_configs:
-          - to: REPLACE_WITH_ALERT_EMAIL
-            send_resolved: true
-
-    inhibit_rules:
-      - source_matchers:
-          - severity=critical
-        target_matchers:
-          - severity=warning
-        equal: [alertname, namespace]
+# Alertmanager config Secret is provisioned by ESO from Secrets Manager.
+# See k8s/base/external-secrets/alertmanager-config.yaml
+# Before deploying, store SMTP credentials in AWS Secrets Manager:
+#   aws secretsmanager create-secret \
+#     --name petclinic/alertmanager-smtp \
+#     --secret-string '{"email":"you@gmail.com","password":"xxxx xxxx xxxx xxxx"}'
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -112,6 +54,12 @@ spec:
       containers:
         - name: alertmanager
           image: prom/alertmanager:v0.27.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           args:
             - --config.file=/etc/alertmanager/alertmanager.yml
             - --storage.path=/alertmanager

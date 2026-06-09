@@ -104,9 +104,10 @@ kubectl wait deployment -n argocd \
 # ── Step 4: Apply ArgoCD Application CRDs + RBAC ──────────────────────────
 echo ""
 echo "==> Step 4 — Applying ArgoCD Application CRDs and RBAC..."
+kubectl apply -f "$REPO_ROOT/k8s/argocd/appproject-${ENV}.yaml" -n argocd
 kubectl apply -f "$REPO_ROOT/k8s/argocd/applications/$ENV/" -n argocd
 kubectl apply -f "$REPO_ROOT/k8s/argocd/argocd-rbac-cm.yaml" -n argocd
-echo "    Applications registered in ArgoCD."
+echo "    AppProject and Applications registered in ArgoCD."
 
 # ── Step 5: Install External Secrets Operator ─────────────────────────────
 echo ""

@@ -1,19 +1,48 @@
 # Incident Playbook
 
-**Last Updated:** 2026-06-09
+**Last Updated:** 2026-06-10
+**Ticket:** PETPLAT-104
 
-Common failure scenarios for the Petclinic platform, with diagnosis commands and resolution steps.
+Common failure scenarios for the Petclinic platform, with severity classification, diagnosis commands, resolution steps, escalation tiers, and RCA template.
 
 ---
 
 ## Table of Contents
 
-1. [Pod in CrashLoopBackOff](#pod-in-crashloopbackoff)
-2. [Service Not Registering with Eureka](#service-not-registering-with-eureka)
-3. [Database Connection Failures](#database-connection-failures)
-4. [Image Pull Errors from ECR](#image-pull-errors-from-ecr)
-5. [Node Not Ready](#node-not-ready)
-6. [High Latency / Timeouts](#high-latency--timeouts)
+1. [Severity Classification](#severity-classification)
+2. [Escalation Tiers](#escalation-tiers)
+3. [Pod in CrashLoopBackOff](#pod-in-crashloopbackoff)
+4. [Service Not Registering with Eureka](#service-not-registering-with-eureka)
+5. [Database Connection Failures](#database-connection-failures)
+6. [Image Pull Errors from ECR](#image-pull-errors-from-ecr)
+7. [Node Not Ready](#node-not-ready)
+8. [High Latency / Timeouts](#high-latency--timeouts)
+9. [RCA Template](#rca-template)
+
+---
+
+## Severity Classification
+
+| Severity | Criteria | Response Time | Example |
+|----------|----------|--------------|---------|
+| **SEV1 — Critical** | Full service outage; all users impacted; data loss risk | Immediate — page on-call | API gateway down, RDS unreachable |
+| **SEV2 — High** | Significant feature degraded; >25% users impacted; SLO breach | 30 minutes | One service CrashLoopBackOff, ECR pull failure blocking deploy |
+| **SEV3 — Medium** | Single feature degraded; <25% users impacted; SLO at risk | 4 hours | Grafana down, elevated latency without SLO breach |
+| **SEV4 — Low** | Minor issue; no user impact; informational | Next business day | Deprecated API usage warning, non-critical alert firing |
+
+---
+
+## Escalation Tiers
+
+| Tier | Who | When to escalate | Contact |
+|------|-----|-----------------|---------|
+| Tier 1 | On-call engineer | First responder; triage and initial diagnosis | Alertmanager → Slack `#petclinic-incidents` |
+| Tier 2 | Platform team lead | SEV1/SEV2 unresolved after 30 minutes; data loss risk | Direct message or phone |
+| Tier 3 | AWS Support | Infrastructure failures outside team control (region issues, EKS control plane) | AWS Support Case |
+
+**War room:** For SEV1/SEV2 incidents, open a Zoom bridge and post updates every 15 minutes to `#petclinic-incidents` until resolved.
+
+---
 
 ---
 
@@ -295,4 +324,88 @@ kubectl scale deployment/{service} --replicas=2 -n petclinic-{env}
 
 # After identifying the root cause, commit a fix to helm-values/{service}.yaml
 # ArgoCD will apply it automatically (dev) or on manual sync (prod)
+```
+
+---
+
+## RCA Template
+
+Use this template for all SEV1 and SEV2 incidents. Complete within 48 hours of resolution.
+
+```markdown
+# RCA: {Short title of incident}
+
+**Incident date:** YYYY-MM-DD
+**Severity:** SEV{1|2|3|4}
+**Duration:** {start time} → {end time} ({total duration})
+**Author:** {role — e.g., on-call engineer}
+**Status:** Draft | In Review | Final
+
+---
+
+## Summary
+
+One paragraph: what happened, what was the user impact, and how was it resolved.
+
+---
+
+## Timeline
+
+| Time (UTC) | Event |
+|------------|-------|
+| HH:MM | Alert fired / incident detected |
+| HH:MM | On-call paged, started investigation |
+| HH:MM | Root cause identified |
+| HH:MM | Mitigation applied |
+| HH:MM | Service restored |
+| HH:MM | Incident closed |
+
+---
+
+## Root Cause
+
+Describe the technical root cause in detail. What failed? Why did it fail?
+
+---
+
+## Contributing Factors
+
+List any conditions that made the incident worse or harder to detect:
+- Missing alert / alert fired too late
+- Insufficient logging
+- Deployment without testing
+- Manual error
+
+---
+
+## Impact
+
+| Metric | Value |
+|--------|-------|
+| Users impacted | {count or %} |
+| Services affected | {list} |
+| Data lost | {yes/no — if yes, describe} |
+| SLO breach | {yes/no — which SLO, by how much} |
+
+---
+
+## Resolution
+
+What change was made to restore the service?
+
+---
+
+## Action Items
+
+| Action | Owner | Due Date | Ticket |
+|--------|-------|---------|--------|
+| {fix the root cause} | {role} | {date} | PETPLAT-xxx |
+| {add missing alert} | {role} | {date} | PETPLAT-xxx |
+| {update runbook} | {role} | {date} | PETPLAT-xxx |
+
+---
+
+## Lessons Learned
+
+What went well? What should change? What surprised the team?
 ```

@@ -1,4 +1,4 @@
-# Petclinic Platform — Operations Runbook
+﻿# Petclinic Platform â€” Operations Runbook
 
 **Last Updated:** 2026-06-09
 **Purpose:** Step-by-step procedures for common operational tasks on the petclinic-platform infrastructure. Each procedure is self-contained and includes verification and rollback steps.
@@ -7,20 +7,23 @@
 
 1. [EKS: Add an IAM User or Role to the Cluster](#eks-add-an-iam-user-or-role-to-the-cluster)
 2. [EKS: Upgrade Add-on Versions](#eks-upgrade-add-on-versions)
-3. [ECR: Authenticate Docker to the Registry](#ecr-authenticate-docker-to-the-registry)
-4. [ECR: Build and Push Images Manually](#ecr-build-and-push-images-manually)
-5. [RDS: Database Initialization Strategy](#rds-database-initialization-strategy)
-6. [RDS: Retrieve Credentials from Secrets Manager](#rds-retrieve-credentials-from-secrets-manager)
-7. [RDS: Free-Tier Backup Retention Deviation](#rds-free-tier-backup-retention-deviation)
-8. [DNS: Set CLOUDFLARE_API_TOKEN Before Applying](#dns-set-cloudflare_api_token-before-applying)
-9. [DNS: Install AWS Load Balancer Controller and Apply Ingress](#dns-install-aws-load-balancer-controller-and-apply-ingress)
-10. [DNS: Create Cloudflare CNAME After ALB Provisioning](#dns-create-cloudflare-cname-after-alb-provisioning)
-11. [Infrastructure: Safe Teardown Before terraform destroy](#infrastructure-safe-teardown-before-terraform-destroy)
-12. [Secrets: Add a New Application Secret](#secrets-add-a-new-application-secret)
-13. [Services: Restart a Service](#services-restart-a-service)
-14. [Services: Scale Replicas Manually](#services-scale-replicas-manually)
-15. [ArgoCD: Roll Back to a Previous Image Tag](#argocd-roll-back-to-a-previous-image-tag)
-16. [Terraform: Plan and Apply Workflow](#terraform-plan-and-apply-workflow)
+3. [EKS: Kubernetes Version Upgrade Strategy](#eks-kubernetes-version-upgrade-strategy)
+4. [ECR: Authenticate Docker to the Registry](#ecr-authenticate-docker-to-the-registry)
+5. [ECR: Build and Push Images Manually](#ecr-build-and-push-images-manually)
+6. [RDS: Database Initialization Strategy](#rds-database-initialization-strategy)
+7. [RDS: Retrieve Credentials from Secrets Manager](#rds-retrieve-credentials-from-secrets-manager)
+8. [RDS: Free-Tier Backup Retention Deviation](#rds-free-tier-backup-retention-deviation)
+9. [DNS: Set CLOUDFLARE_API_TOKEN Before Applying](#dns-set-cloudflare_api_token-before-applying)
+10. [DNS: Install AWS Load Balancer Controller and Apply Ingress](#dns-install-aws-load-balancer-controller-and-apply-ingress)
+11. [DNS: Create Cloudflare CNAME After ALB Provisioning](#dns-create-cloudflare-cname-after-alb-provisioning)
+12. [Infrastructure: Safe Teardown Before terraform destroy](#infrastructure-safe-teardown-before-terraform-destroy)
+13. [Secrets: Add a New Application Secret](#secrets-add-a-new-application-secret)
+14. [Services: Restart a Service](#services-restart-a-service)
+15. [Services: Scale Replicas Manually](#services-scale-replicas-manually)
+16. [ArgoCD: Roll Back to a Previous Image Tag](#argocd-roll-back-to-a-previous-image-tag)
+17. [Terraform: Plan and Apply Workflow](#terraform-plan-and-apply-workflow)
+18. [Terraform: State Management Operations](#terraform-state-management-operations)
+19. [Infrastructure: Full Destroy and Rebuild Procedure](#infrastructure-full-destroy-and-rebuild-procedure)
 
 ---
 
@@ -53,7 +56,7 @@
    module "eks" {
      # ... existing config ...
      admin_iam_arns = [
-       "arn:aws:iam::568521409121:user/new-engineer",
+       "arn:aws:iam::<ACCOUNT_ID>:user/new-engineer",
      ]
    }
    ```
@@ -153,7 +156,7 @@ Status should be `ACTIVE`.
 
 **Rollback:**
 - Revert the version variable to the previous value in `variables.tf` and re-apply.
-- EKS supports downgrading add-on versions via Terraform the same way — just change the version string and apply.
+- EKS supports downgrading add-on versions via Terraform the same way â€” just change the version string and apply.
 
 ---
 
@@ -163,7 +166,7 @@ Status should be `ACTIVE`.
 
 ### Procedure: Log in Docker to ECR before pushing or pulling images
 
-**When:** Before running `docker push` or `docker pull` against ECR. ECR tokens expire after 12 hours — re-run this if you get an authentication error.
+**When:** Before running `docker push` or `docker pull` against ECR. ECR tokens expire after 12 hours â€” re-run this if you get an authentication error.
 
 **Who:** Any engineer with AWS credentials configured (`aws sts get-caller-identity` must work)
 
@@ -204,7 +207,7 @@ Status should be `ACTIVE`.
 
 **Who:** Engineer with Docker Desktop running, Java 17 installed, AWS credentials, and the app repo cloned locally
 
-**Time:** ~15–20 minutes (Maven build ~5 min + ARM64 image builds ~90 sec each × 8 services)
+**Time:** ~15â€“20 minutes (Maven build ~5 min + ARM64 image builds ~90 sec each Ã— 8 services)
 
 **Steps:**
 
@@ -247,8 +250,8 @@ done
 All 8 services should show the expected tag.
 
 **Rollback:**
-- ECR repos in dev use `MUTABLE` tags — you can overwrite a tag by re-running the script with the same `--tag` value.
-- ECR repos in prod use `IMMUTABLE` tags — to fix a bad image, push a new tag and update `helm-values/{service}.yaml`.
+- ECR repos in dev use `MUTABLE` tags â€” you can overwrite a tag by re-running the script with the same `--tag` value.
+- ECR repos in prod use `IMMUTABLE` tags â€” to fix a bad image, push a new tag and update `helm-values/{service}.yaml`.
 
 ---
 
@@ -260,23 +263,23 @@ All 8 services should show the expected tag.
 
 All three database-backed services (customers, visits, vets) share a **single RDS MySQL instance** with a single `petclinic` database. Each service owns its own tables within that database. The database is created automatically by Terraform (`db_name = "petclinic"` on the `aws_db_instance` resource).
 
-**Strategy: Spring Boot auto-initialization** — each service initializes its own schema tables on first startup using `spring.sql.init.mode=always` (active when the `mysql` profile is set). No manual schema scripts are run; no init containers handle SQL.
+**Strategy: Spring Boot auto-initialization** â€” each service initializes its own schema tables on first startup using `spring.sql.init.mode=always` (active when the `mysql` profile is set). No manual schema scripts are run; no init containers handle SQL.
 
 ### Schema Ownership
 
 | Service | Tables Created | Foreign Keys |
 |---------|---------------|--------------|
-| customers-service | `types`, `owners`, `pets` | `pets.owner_id` → `owners(id)`, `pets.type_id` → `types(id)` |
-| vets-service | `vets`, `specialties`, `vet_specialties` | `vet_specialties.vet_id` → `vets(id)`, `vet_specialties.specialty_id` → `specialties(id)` |
-| visits-service | `visits` | `visits.pet_id` → `pets(id)` — **cross-service FK** |
+| customers-service | `types`, `owners`, `pets` | `pets.owner_id` â†’ `owners(id)`, `pets.type_id` â†’ `types(id)` |
+| vets-service | `vets`, `specialties`, `vet_specialties` | `vet_specialties.vet_id` â†’ `vets(id)`, `vet_specialties.specialty_id` â†’ `specialties(id)` |
+| visits-service | `visits` | `visits.pet_id` â†’ `pets(id)` â€” **cross-service FK** |
 
 ### Initialization Order (CRITICAL)
 
 `visits.pet_id` references `pets(id)` which is created by customers-service. Deploy in this order:
 
-1. **customers-service** — creates `types`, `owners`, `pets`
-2. **vets-service** — creates `vets`, `specialties`, `vet_specialties` (independent, can be parallel)
-3. **visits-service** — creates `visits` (must run after customers-service creates `pets`)
+1. **customers-service** â€” creates `types`, `owners`, `pets`
+2. **vets-service** â€” creates `vets`, `specialties`, `vet_specialties` (independent, can be parallel)
+3. **visits-service** â€” creates `visits` (must run after customers-service creates `pets`)
 
 This order is enforced in ArgoCD via sync waves (E-17) and init containers (E-8). Do not start visits-service before customers-service has initialized its schema.
 
@@ -288,8 +291,8 @@ DB-backed services must have both profiles active:
 SPRING_PROFILES_ACTIVE=docker,mysql
 ```
 
-- `docker` — switches Config Server URL from localhost to `config-server` (Docker DNS)
-- `mysql` — switches from in-memory HSQLDB to MySQL datasource
+- `docker` â€” switches Config Server URL from localhost to `config-server` (Docker DNS)
+- `mysql` â€” switches from in-memory HSQLDB to MySQL datasource
 
 ### Connection String Format
 
@@ -371,10 +374,10 @@ After services have started, you should see: `owners`, `pets`, `types`, `special
 
 ### Overview
 
-The technical spec and Jira backlog specify `backup_retention_period = 7` for dev. This cannot be applied to free-tier AWS accounts — AWS returns `FreeTierRestrictionError` when any value greater than 0 is set.
+The technical spec and Jira backlog specify `backup_retention_period = 7` for dev. This cannot be applied to free-tier AWS accounts â€” AWS returns `FreeTierRestrictionError` when any value greater than 0 is set.
 
-**Dev:** `backup_retention_period = 0` (automated backups disabled — free tier requirement)
-**Prod:** `backup_retention_period = 30` (as specced — prod is not a free tier resource)
+**Dev:** `backup_retention_period = 0` (automated backups disabled â€” free tier requirement)
+**Prod:** `backup_retention_period = 30` (as specced â€” prod is not a free tier resource)
 
 ### Impact
 
@@ -408,7 +411,7 @@ If the AWS account is upgraded from free tier, re-enable automated backups by ch
 
 ### Overview
 
-DNS records for `praty.dev` are managed by the **Cloudflare Terraform provider** — there is no manual registrar step, no NS delegation, and no waiting for propagation. The provider creates ACM validation CNAMEs and the app subdomain CNAME directly in Cloudflare via API. See [ADR-0004](adr/0004-cloudflare-provider-for-dns.md) for the rationale.
+DNS records for `praty.dev` are managed by the **Cloudflare Terraform provider** â€” there is no manual registrar step, no NS delegation, and no waiting for propagation. The provider creates ACM validation CNAMEs and the app subdomain CNAME directly in Cloudflare via API. See [ADR-0004](adr/0004-cloudflare-provider-for-dns.md) for the rationale.
 
 Every `terraform plan` and `terraform apply` that touches the DNS module or the app CNAME requires `CLOUDFLARE_API_TOKEN` to be set in the shell environment. The token is **never stored in code or state**.
 
@@ -422,7 +425,7 @@ Every `terraform plan` and `terraform apply` that touches the DNS module or the 
 
 **Steps:**
 
-1. Generate a token at [Cloudflare Dashboard → My Profile → API Tokens](https://dash.cloudflare.com/profile/api-tokens):
+1. Generate a token at [Cloudflare Dashboard â†’ My Profile â†’ API Tokens](https://dash.cloudflare.com/profile/api-tokens):
    - Use the **"Edit zone DNS"** template
    - Scope it to the specific zone (`praty.dev`)
    - Permissions needed: `Zone:Read` + `DNS:Edit`
@@ -438,7 +441,7 @@ Every `terraform plan` and `terraform apply` that touches the DNS module or the 
    terraform plan -var="domain_name=praty.dev" -out plan.out
    terraform apply plan.out
    ```
-   The ACM validation CNAME is created in Cloudflare automatically. `aws_acm_certificate_validation` completes within 2–5 minutes with no additional steps.
+   The ACM validation CNAME is created in Cloudflare automatically. `aws_acm_certificate_validation` completes within 2â€“5 minutes with no additional steps.
 
 **Verify:**
 ```bash
@@ -455,7 +458,7 @@ aws acm describe-certificate \
 **Token security:**
 - Store the token in a password manager, not in `.bashrc` or `.zshrc`.
 - Rotate the token immediately if it is ever visible in chat, logs, or shell history.
-- A compromised token with `DNS:Edit` scope can modify DNS records for the domain — treat it like a root password.
+- A compromised token with `DNS:Edit` scope can modify DNS records for the domain â€” treat it like a root password.
 
 ---
 
@@ -465,7 +468,7 @@ aws acm describe-certificate \
 
 ### Procedure: Install the AWS Load Balancer Controller and create the ALB
 
-**When:** After `terraform apply` has completed (IRSA role and ACM cert exist). DNS is managed automatically — no manual delegation step required.
+**When:** After `terraform apply` has completed (IRSA role and ACM cert exist). DNS is managed automatically â€” no manual delegation step required.
 
 **Who:** kubectl access to the EKS cluster + helm installed
 
@@ -541,23 +544,23 @@ The ALB is deleted when the Ingress resource is deleted.
    terraform plan -var="domain_name=praty.dev" -var="alb_dns_name=$ALB_DNS" -out plan.out
    terraform apply plan.out
    ```
-   This creates `petclinic-dev.praty.dev → ALB` (for dev) or `petclinic.praty.dev → ALB` (for prod).
+   This creates `petclinic-dev.praty.dev â†’ ALB` (for dev) or `petclinic.praty.dev â†’ ALB` (for prod).
 
 3. Persist the ALB hostname so future applies don't lose it:
    ```bash
-   # Add to terraform/environments/dev/terraform.tfvars (gitignored — local only):
+   # Add to terraform/environments/dev/terraform.tfvars (gitignored â€” local only):
    # alb_dns_name = "k8s-petclini-a1b2c3d4-1234567890.eu-central-1.elb.amazonaws.com"
    ```
    With this set, subsequent `terraform plan` calls don't require the `-var="alb_dns_name=..."` flag.
 
 **Verify:**
 ```bash
-# DNS lookup — CNAME chain visible
+# DNS lookup â€” CNAME chain visible
 nslookup petclinic-dev.praty.dev
 
-# HTTP → HTTPS redirect (ALB listener)
+# HTTP â†’ HTTPS redirect (ALB listener)
 curl -I http://petclinic-dev.praty.dev
-# Expected: HTTP/1.1 301 Moved Permanently → https://petclinic-dev.praty.dev
+# Expected: HTTP/1.1 301 Moved Permanently â†’ https://petclinic-dev.praty.dev
 
 # HTTPS response (before app services are deployed, expect 404 or 503 from ALB default rule)
 curl -I https://petclinic-dev.praty.dev
@@ -577,7 +580,7 @@ terraform state show 'cloudflare_record.app[0]'
 
 ### Overview
 
-Running `terraform destroy` directly while an Ingress exists will fail with dependency violations. The ALB is created by the AWS Load Balancer Controller (a Kubernetes operator) — not by Terraform. Terraform has no state entry for it and cannot delete it. The ALB holds references to the ACM certificate, subnets, security group, and IGW, which causes a cascade of `DependencyViolation` and `ResourceInUseException` errors.
+Running `terraform destroy` directly while an Ingress exists will fail with dependency violations. The ALB is created by the AWS Load Balancer Controller (a Kubernetes operator) â€” not by Terraform. Terraform has no state entry for it and cannot delete it. The ALB holds references to the ACM certificate, subnets, security group, and IGW, which causes a cascade of `DependencyViolation` and `ResourceInUseException` errors.
 
 **ECR is not a concern**: `force_delete = true` is set in the ECR module. Terraform destroy succeeds even when repositories contain images.
 
@@ -591,12 +594,12 @@ Running `terraform destroy` directly while an Ingress exists will fail with depe
 
 **Steps:**
 
-1. Delete the Kubernetes Ingress — the LB Controller sees this and deletes the ALB automatically:
+1. Delete the Kubernetes Ingress â€” the LB Controller sees this and deletes the ALB automatically:
    ```bash
    kubectl delete ingress petclinic-ingress -n petclinic-{env}
    ```
 
-2. Wait for the LB Controller to delete the ALB (~30–60 seconds), then confirm it is gone:
+2. Wait for the LB Controller to delete the ALB (~30â€“60 seconds), then confirm it is gone:
    ```bash
    aws elbv2 describe-load-balancers --region eu-central-1 \
      --query "LoadBalancers[*].{Name:LoadBalancerName,State:State.Code}" \
@@ -611,7 +614,7 @@ Running `terraform destroy` directly while an Ingress exists will fail with depe
    ```
    All resources should now delete cleanly. If any Secrets Manager deletion fails due to a recovery window, the `recovery_window_in_days = 0` setting on dev ensures force-deletion.
 
-**Why the ALB must be deleted first:** Terraform never created the ALB — the LB Controller did. Terraform cannot destroy what it doesn't manage. Deleting the Ingress delegates the cleanup back to the same controller that created the ALB, which is the correct and safe path.
+**Why the ALB must be deleted first:** Terraform never created the ALB â€” the LB Controller did. Terraform cannot destroy what it doesn't manage. Deleting the Ingress delegates the cleanup back to the same controller that created the ALB, which is the correct and safe path.
 
 **Rollback / if you skipped step 1:**
 If `terraform destroy` fails with `DependencyViolation` or `ResourceInUseException`, the ALB is still alive. Find and delete it manually:
@@ -628,7 +631,7 @@ aws elbv2 delete-load-balancer --region eu-central-1 \
 # Wait ~30 seconds, then retry terraform destroy
 ```
 
-**If the ALB is recreated** (e.g., after Ingress delete + re-apply), the ALB hostname changes. Repeat step 1–2 with the new hostname and update `terraform.tfvars`.
+**If the ALB is recreated** (e.g., after Ingress delete + re-apply), the ALB hostname changes. Repeat step 1â€“2 with the new hostname and update `terraform.tfvars`.
 
 ---
 
@@ -665,7 +668,7 @@ aws elbv2 delete-load-balancer --region eu-central-1 \
 
    ```hcl
    # In the secrets module or ESO IRSA resource, add to the allowed_secret_arns list:
-   "arn:aws:secretsmanager:eu-central-1:568521409121:secret:petclinic/${ENV}/my-new-secret-*"
+   "arn:aws:secretsmanager:eu-central-1:<ACCOUNT_ID>:secret:petclinic/${ENV}/my-new-secret-*"
    ```
 
    Then run:
@@ -764,11 +767,11 @@ aws secretsmanager delete-secret \
 **Time:** 1-3 minutes per service
 
 **Steps:**
-1. Trigger a rolling restart (ArgoCD will not revert this — it only reverts spec changes, not restarts):
+1. Trigger a rolling restart (ArgoCD will not revert this â€” it only reverts spec changes, not restarts):
    ```bash
    kubectl rollout restart deployment/{service-name} -n petclinic-{env}
    ```
-   Example — restart all 8 services at once:
+   Example â€” restart all 8 services at once:
    ```bash
    for svc in config-server discovery-server api-gateway customers-service visits-service vets-service genai-service admin-server; do
      kubectl rollout restart deployment/$svc -n petclinic-dev
@@ -804,7 +807,7 @@ kubectl get pods -n petclinic-{env} -l app.kubernetes.io/name={service-name}
 
 > **Note (dev environment):** ArgoCD auto-sync is enabled with `selfHeal: true` in dev. A manual scale will be reverted within ~10-15 seconds unless you suspend auto-sync first.
 
-**Steps (dev — suspend ArgoCD first):**
+**Steps (dev â€” suspend ArgoCD first):**
 ```bash
 # 1. Suspend auto-sync for the app
 argocd app set {service-name}-dev --sync-policy none
@@ -816,7 +819,7 @@ kubectl scale deployment/{service-name} --replicas=3 -n petclinic-dev
 argocd app set {service-name}-dev --sync-policy automated
 ```
 
-**Steps (prod — ArgoCD is manual, so no suspension needed):**
+**Steps (prod â€” ArgoCD is manual, so no suspension needed):**
 ```bash
 kubectl scale deployment/{service-name} --replicas=3 -n petclinic-prod
 ```
@@ -880,6 +883,36 @@ kubectl get deployment {service-name} -n petclinic-{env} \
 # Should show the rolled-back SHA tag
 ```
 
+**Alternative: ArgoCD native rollback (without Git commit)**
+
+ArgoCD keeps a history of previous sync states. Use this when you need instant rollback without touching Git:
+```bash
+# List previous syncs (history)
+argocd app history {service-name}-{env}
+# Example output:
+# ID   DATE                           REVISION
+# 0    2026-06-08 12:00:00 +0000 UTC  main (abc1234)
+# 1    2026-06-09 10:00:00 +0000 UTC  main (def5678)
+
+# Roll back to a previous sync by ID
+argocd app rollback {service-name}-{env} 0
+```
+
+**Emergency fallback: `kubectl rollout undo`**
+
+Use only when ArgoCD is unreachable or rollback must happen faster than a Git commit can propagate. This bypasses GitOps — ArgoCD will revert it on the next sync:
+```bash
+# Roll back to the previous deployment revision
+kubectl rollout undo deployment/{service-name} -n petclinic-{env}
+
+# Verify the rolled-back image
+kubectl get deployment {service-name} -n petclinic-{env} \
+  -o jsonpath='{.spec.template.spec.containers[0].image}'
+
+# IMPORTANT: After using kubectl rollout undo, immediately update helm-values/{service}.yaml
+# with the correct tag and push so ArgoCD does not overwrite your rollback on next sync.
+```
+
 **Rollback of rollback:**
 ```bash
 git revert HEAD  # undoes the revert commit, restoring the bad tag
@@ -893,7 +926,7 @@ git push origin main
 
 ### Procedure: Safely apply infrastructure changes
 
-**When:** Any Terraform change — adding a resource, changing config, version upgrade
+**When:** Any Terraform change â€” adding a resource, changing config, version upgrade
 **Who:** AWS admin (IAM permissions matching the resource being changed)
 **Time:** 5-30 minutes depending on resources
 
@@ -910,16 +943,16 @@ git push origin main
    terraform plan -out plan.out
    ```
    Review the plan output carefully:
-   - `+` create (new resource — low risk)
-   - `~` update in-place (change attributes — medium risk)
-   - `-/+` destroy and recreate (check the `# forces replacement` annotation — HIGH RISK)
-   - `-` destroy (HIGH RISK — confirm this is intentional)
+   - `+` create (new resource â€” low risk)
+   - `~` update in-place (change attributes â€” medium risk)
+   - `-/+` destroy and recreate (check the `# forces replacement` annotation â€” HIGH RISK)
+   - `-` destroy (HIGH RISK â€” confirm this is intentional)
 
 3. Apply the saved plan:
    ```bash
    terraform apply plan.out
    ```
-   Never run `terraform apply` without a saved plan file — the pre-commit hook will warn you.
+   Never run `terraform apply` without a saved plan file â€” the pre-commit hook will warn you.
 
 4. After apply, verify key outputs:
    ```bash
@@ -953,3 +986,366 @@ git push origin main
 - Always use `terraform plan -out plan.out` and review before applying.
 - Never run `terraform destroy` without reading the [Infrastructure: Safe Teardown](#infrastructure-safe-teardown-before-terraform-destroy) procedure first.
 - The `block-destroy.sh` hook blocks `terraform destroy` at the CLI level. Contact the team lead to override.
+
+---
+
+## EKS: Kubernetes Version Upgrade Strategy
+
+**Related stories:** PETPLAT-91
+
+### Overview
+
+AWS EKS supports Kubernetes versions for ~14 months after release. Monitor the [AWS EKS version calendar](https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions.html) and upgrade before the current version reaches end-of-support.
+
+### Procedure: Upgrade EKS Cluster Version
+
+**When:** Current K8s version is within 60 days of EKS end-of-support, or a security advisory requires it.
+
+**Who:** Terraform access + `kubectl` admin on the cluster
+
+**Time:** 45â€“90 minutes (control plane: ~30 min, node group rolling update: ~30 min)
+
+**Steps:**
+
+```bash
+# 1. Check current version and available upgrades
+aws eks describe-cluster \
+  --name petclinic-{env}-eks \
+  --query 'cluster.{version:version,status:status}'
+
+# 2. Review release notes for the target version
+#    https://kubernetes.io/releases/
+
+# 3. Update cluster_version in the EKS module variable (one minor version at a time)
+#    Edit: terraform/environments/{env}/main.tf
+#    module "eks" { ... cluster_version = "1.35" }
+#    Note: always upgrade one minor version at a time (1.34 â†’ 1.35, not 1.34 â†’ 1.36)
+
+# 4. Plan and apply â€” control plane upgrades first
+cd terraform/environments/{env}
+terraform plan -target=module.eks -out plan.out
+# Review: confirm only EKS cluster version changes
+terraform apply plan.out
+
+# 5. Wait for control plane upgrade to complete
+aws eks wait cluster-active --name petclinic-{env}-eks
+
+# 6. Upgrade managed node group (triggers rolling replacement)
+#    Terraform applies this automatically in the same apply, but verify:
+aws eks describe-nodegroup \
+  --cluster-name petclinic-{env}-eks \
+  --nodegroup-name petclinic-{env}-nodes \
+  --query 'nodegroup.{status:status,version:version,releaseVersion:releaseVersion}'
+
+# 7. Upgrade EKS add-ons to versions compatible with new K8s version
+#    See: EKS: Upgrade Add-on Versions procedure
+
+# 8. Verify cluster health
+kubectl get nodes
+kubectl get pods -A | grep -v Running | grep -v Completed
+```
+
+**Verify:**
+- `kubectl version` shows the new server version
+- All pods are Running or Completed
+- ArgoCD shows all applications Healthy
+
+**Rollback:**
+- EKS control plane upgrades are one-way â€” you cannot downgrade K8s versions
+- If node group upgrade fails: the old nodes remain in service; rolling update can be re-triggered
+- If add-on upgrades break workloads: roll back the add-on version in `module.eks`
+
+**Pre-upgrade checklist:**
+- [ ] Test upgrade in dev environment first
+- [ ] Review `kubectl get pods --all-namespaces` â€” no pods stuck in Pending/Error before starting
+- [ ] Confirm Karpenter compatibility with new K8s version
+- [ ] Check Helm chart apiVersion compatibility (especially if upgrading past K8s 1.25+)
+- [ ] Schedule during low-traffic window (prod only)
+
+---
+
+## Terraform: State Management Operations
+
+**Related stories:** PETPLAT-92
+
+### Overview
+
+Terraform state is stored in S3 (`petclinic-terraform-state`) with DynamoDB locking (`petclinic-terraform-locks`). These procedures handle common state problems without destructive actions.
+
+### Procedure: Unlock a Stale State Lock
+
+**When:** A `terraform plan/apply` fails with "Error acquiring the state lock" and the process that acquired it is no longer running.
+
+**Who:** Terraform access + AWS CLI
+
+**Time:** 2 minutes
+
+**Steps:**
+
+```bash
+# 1. Get the lock ID from the error message, or query DynamoDB directly
+aws dynamodb scan \
+  --table-name petclinic-terraform-locks \
+  --filter-expression "begins_with(LockID, :prefix)" \
+  --expression-attribute-values '{":prefix": {"S": "petclinic/{env}/"}}' \
+  --query 'Items[*].{LockID:LockID.S,Created:Info.S}' \
+  --output table
+
+# 2. Confirm no terraform process is actually running (check CI and other team members)
+
+# 3. Force-unlock (use the ID from the error message or step 1 output)
+terraform force-unlock LOCK_ID
+```
+
+**Verify:** `terraform plan` runs without "state lock" error.
+
+---
+
+### Procedure: Import an Existing Resource into State
+
+**When:** A resource was created manually in AWS or outside Terraform and needs to be brought under Terraform management.
+
+**Who:** Terraform access
+
+**Time:** 5â€“10 minutes
+
+**Steps:**
+
+```bash
+# 1. Find the resource ARN or ID in AWS Console or CLI
+
+# 2. Add the resource block to the appropriate .tf file WITHOUT applying yet
+
+# 3. Import the resource into state
+terraform import {resource_type}.{name} {resource_id}
+# Example:
+terraform import aws_secretsmanager_secret.my_secret arn:aws:secretsmanager:eu-central-1:ACCOUNT:secret:name
+
+# 4. Run plan to verify no unexpected changes
+terraform plan
+# Expected: "No changes" or only attribute diffs that are acceptable
+
+# 5. Apply only if plan shows safe changes
+terraform apply plan.out
+```
+
+---
+
+### Procedure: Remove a Resource from State (Without Destroying)
+
+**When:** A resource should no longer be managed by Terraform but must not be deleted (e.g., transferring ownership).
+
+**Steps:**
+
+```bash
+# 1. Remove from state â€” the AWS resource is NOT deleted
+terraform state rm {resource_type}.{name}
+# Example:
+terraform state rm aws_s3_bucket.legacy
+
+# 2. Remove the resource block from the .tf file
+
+# 3. Run terraform plan to confirm no references remain
+terraform plan
+```
+
+---
+
+### Procedure: Recover from Corrupted State
+
+**When:** `terraform plan` shows unexpected destroy/recreate for resources that are actually healthy.
+
+**Steps:**
+
+```bash
+# 1. List S3 state file versions
+aws s3api list-object-versions \
+  --bucket petclinic-terraform-state \
+  --prefix petclinic/{env}/terraform.tfstate \
+  --query 'Versions[*].[VersionId,LastModified,IsLatest]' \
+  --output table
+
+# 2. Download a known-good version for inspection
+aws s3api get-object \
+  --bucket petclinic-terraform-state \
+  --key petclinic/{env}/terraform.tfstate \
+  --version-id {PREVIOUS_VERSION_ID} \
+  terraform.tfstate.bak
+
+# 3. Inspect the backup â€” verify it reflects real AWS state
+terraform show terraform.tfstate.bak
+
+# 4. Restore the backup (upload as new current version)
+aws s3 cp terraform.tfstate.bak \
+  s3://petclinic-terraform-state/petclinic/{env}/terraform.tfstate
+
+# 5. Re-run plan and verify
+terraform plan
+```
+
+**Safety reminders:**
+- Always use `terraform plan -out plan.out` and review before applying.
+- Never run `terraform destroy` without reading the [Infrastructure: Safe Teardown](#infrastructure-safe-teardown-before-terraform-destroy) procedure first.
+- The `block-destroy.sh` hook blocks `terraform destroy` at the CLI level. Contact the team lead to override.
+
+---
+
+## Infrastructure: Full Destroy and Rebuild Procedure
+
+**Related stories:** PETPLAT-78, PETPLAT-90
+**Also see:** [disaster-recovery.md Â§ Infrastructure Rebuild Procedure](disaster-recovery.md#infrastructure-rebuild-procedure) for the rebuild steps.
+
+This procedure completely tears down and optionally recreates the entire Petclinic platform. Use it for: end-of-session cost saving, DR testing, or starting fresh after a misconfiguration.
+
+---
+
+### Part 1: Full Infrastructure Destroy
+
+Resources created by Kubernetes operators (ALB, EBS PVs) are **not tracked by Terraform** and must be cleaned up first, or `terraform destroy` will fail with dependency errors.
+
+**When:** Completely destroying a dev or prod environment.
+**Who:** `kubectl` access + AWS CLI + Terraform.
+**Time:** ~20â€“30 minutes.
+**Note:** The `block-destroy.sh` safety hook intercepts `terraform destroy`. Acknowledge the prompt to proceed.
+
+#### Step 1 â€” Pause ArgoCD auto-sync (dev only)
+
+Prevents ArgoCD from re-creating resources during cleanup:
+
+```bash
+argocd app list --output name | grep "\-dev" | while read app; do
+  argocd app set "$app" --sync-policy none
+done
+```
+
+Or via ArgoCD UI: each application â†’ App Details â†’ Disable Auto-Sync.
+
+#### Step 2 â€” Delete all ArgoCD Applications
+
+Gracefully removes all Helm releases (pods, services, configmaps) from petclinic namespaces:
+
+```bash
+kubectl get applications -n argocd -o name | grep "{env}" | xargs kubectl delete -n argocd
+```
+
+Wait for pods to terminate:
+```bash
+kubectl get pods -n petclinic-{env} --watch
+```
+
+#### Step 3 â€” Delete the Kubernetes Ingress (triggers ALB deletion)
+
+```bash
+kubectl delete ingress petclinic-ingress -n petclinic-{env}
+```
+
+Wait for ALB deletion (~30â€“60 seconds):
+```bash
+aws elbv2 describe-load-balancers --region eu-central-1 \
+  --query "LoadBalancers[*].{Name:LoadBalancerName,State:State.Code}" \
+  --output table
+# Expected: no ALBs with "petclinic" in the name
+```
+
+#### Step 4 â€” Delete PVCs to release EBS volumes
+
+PVCs have `reclaimPolicy: Delete` â€” deleting the PVC deletes the underlying EBS volume:
+
+```bash
+kubectl delete pvc --all -n monitoring
+kubectl delete pvc --all -n petclinic-{env}
+```
+
+Confirm EBS volumes are released:
+```bash
+aws ec2 describe-volumes --region eu-central-1 \
+  --filters "Name=tag:kubernetes.io/cluster/petclinic-{env},Values=owned,shared" \
+            "Name=status,Values=available" \
+  --query 'Volumes[*].{ID:VolumeId,State:State}' --output table
+# Expected: no results
+```
+
+#### Step 5 â€” Uninstall Karpenter
+
+Karpenter must be removed before EKS destroy. If left running, Karpenter may provision new nodes during teardown, creating orphaned EC2 instances not tracked by Terraform:
+
+```bash
+helm uninstall karpenter -n kube-system
+kubectl wait --for=delete pod -l app.kubernetes.io/name=karpenter -n kube-system --timeout=60s
+```
+
+#### Step 6 â€” Uninstall AWS Load Balancer Controller
+
+```bash
+helm uninstall aws-load-balancer-controller -n kube-system
+```
+
+#### Step 7 â€” Uninstall External Secrets Operator
+
+```bash
+helm uninstall external-secrets -n external-secrets
+```
+
+#### Step 8 â€” Delete petclinic and observability namespaces
+
+```bash
+kubectl delete namespace petclinic-{env} monitoring tracing --ignore-not-found
+kubectl wait --for=delete namespace/petclinic-{env} --timeout=120s
+```
+
+#### Step 9 â€” Uninstall ArgoCD
+
+```bash
+kubectl delete namespace argocd --ignore-not-found
+```
+
+#### Step 10 â€” Run terraform destroy
+
+```bash
+cd terraform/environments/{env}
+terraform destroy
+```
+
+Terraform displays all resources to be destroyed. Type `yes` to confirm.
+Expected duration: ~15 minutes. Secrets Manager uses `recovery_window_in_days = 0` (dev) for immediate deletion.
+
+#### Step 11 â€” Verify: no orphaned resources
+
+```bash
+# Orphaned EC2 instances (Karpenter-launched nodes)
+aws ec2 describe-instances --region eu-central-1 \
+  --filters "Name=tag:karpenter.sh/provisioner-name,Values=default" \
+            "Name=instance-state-name,Values=running,pending,stopped" \
+  --query 'Reservations[*].Instances[*].{ID:InstanceId,State:State.Name}' --output table
+
+# Orphaned EBS volumes
+aws ec2 describe-volumes --region eu-central-1 \
+  --filters "Name=status,Values=available" \
+            "Name=tag:kubernetes.io/cluster/petclinic-{env},Values=owned,shared" \
+  --query 'Volumes[*].{ID:VolumeId,Size:Size}' --output table
+
+# Orphaned load balancers
+aws elbv2 describe-load-balancers --region eu-central-1 \
+  --query "LoadBalancers[*].{Name:LoadBalancerName,State:State.Code}" --output table
+```
+
+All three should return no results. Delete any orphans manually before considering teardown complete.
+
+---
+
+### Part 2: Full Infrastructure Rebuild
+
+Complete rebuild procedure: [`docs/disaster-recovery.md Â§ Infrastructure Rebuild Procedure`](disaster-recovery.md#infrastructure-rebuild-procedure).
+
+| Step | Action | Est. Time |
+|------|--------|-----------|
+| 1 | Bootstrap Terraform state backend: `bash scripts/bootstrap-state.sh {env}` | 1 min |
+| 2 | Apply Terraform: `cd terraform/environments/{env} && terraform init && terraform plan -out plan.out && terraform apply plan.out` | 10â€“15 min |
+| 3 | Configure kubectl: `aws eks update-kubeconfig --region eu-central-1 --name petclinic-{env}-eks` | 30 sec |
+| 4 | Bootstrap cluster add-ons (ESO, LB Controller, Karpenter, observability): `bash scripts/up.sh {env}` | 5 min |
+| 5 | Apply base K8s manifests: namespaces, observability namespace, ESO CRDs, network policies | 2 min |
+| 6 | Install ArgoCD: `kubectl apply -f k8s/argocd/install/` + `kubectl apply -f k8s/argocd/argocd-rbac-cm.yaml` + AppProjects + wait for readiness | 2 min |
+| 7 | Register ArgoCD Applications: `kubectl apply -f k8s/argocd/appproject-dev.yaml -f k8s/argocd/appproject-prod.yaml` then `kubectl apply -f k8s/argocd/applications/{env}/` | 30 sec |
+| 8 | Run smoke test: `bash scripts/smoke-test.sh {env}` | 2 min |
+
+**Total rebuild time target: < 30 minutes** (assumes images already exist in ECR).

@@ -145,7 +145,20 @@ spec:
 
 `releaseName` must match the Helm release name used during initial `helm install` so that rendered resource names (e.g., `customers-service`) remain stable. ArgoCD uses the Application name (`customers-service-dev`) as the release name by default — `releaseName` overrides this.
 
-CI updates `image.tag` in `helm-values/{service}.yaml` after every push. ArgoCD detects the commit and syncs (auto in dev, manual in prod).
+### Image Tag Update Mechanism (PETPLAT-87)
+
+CI updates `image.tag` in `helm-values/{service}.yaml` after every push using `yq`. The choice of `yq` over `sed` is deliberate: `yq` preserves YAML structure and comments, avoids regex escaping pitfalls with version strings, and handles nested keys cleanly.
+
+**Flow:**
+1. `build-push.yml` (app repo) builds ARM64 images and pushes to ECR with a 7-char SHA tag.
+2. It fires a `repository_dispatch` event (`app-image-built`) to the platform repo carrying the SHA and list of changed services.
+3. `update-image-tags.yml` (platform repo) receives the event, validates the payload, and runs:
+   ```bash
+   yq -i ".image.tag = \"${SHA}\"" "helm-values/${service}.yaml"
+   ```
+4. The commit is pushed to `main`. ArgoCD detects it within ~3 minutes and syncs (dev: auto, prod: manual).
+
+To roll back to a previous tag, revert the `image.tag` value in the relevant `helm-values/{service}.yaml` and push — ArgoCD will deploy the older image.
 
 ## Adding a New Service
 
@@ -157,7 +170,7 @@ CI updates `image.tag` in `helm-values/{service}.yaml` after every push. ArgoCD 
 ## Security Constraints
 
 - **No secrets in values files.** All secret-backed env vars use `secrets:` list → `secretKeyRef` in the Deployment. The actual secrets are in AWS Secrets Manager, synced by External Secrets Operator.
-- **`readOnlyRootFilesystem: false`** — Spring Boot writes temp files and logs; must remain false.
+- **`readOnlyRootFilesystem: true`** — set in the Deployment template. A `/tmp` emptyDir volume is mounted so Spring Boot can write temp files during startup. If a service needs additional writable paths, add another emptyDir volume mount in its service values file.
 - **`pullPolicy: IfNotPresent`** — default in `values.yaml`. CI always pushes new tags; the tag change triggers a pod rollout, so re-pulling the same tag is unnecessary.
 
 ## HPA and PDB Reference

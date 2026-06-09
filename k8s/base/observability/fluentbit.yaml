@@ -124,6 +124,12 @@ spec:
             - name: http
               containerPort: 2020
               protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           volumeMounts:
             - name: config
               mountPath: /fluent-bit/etc/fluent-bit.conf

@@ -85,7 +85,7 @@ ls -la
 #   helm/              — shared Helm chart for all 8 services
 #   helm-values/       — per-service and per-env values
 #   k8s/               — namespaces, ArgoCD apps, observability
-#   .github/workflows/ — CI pipelines (build + ECR push only)
+#   .github/workflows/ — update-image-tags.yml only (build-push.yml is in the application repo fork)
 #   docs/              — this file + architecture, runbooks, ADRs
 #   scripts/           — operational scripts
 
@@ -280,7 +280,8 @@ kubectl get pod -n petclinic-dev -l app.kubernetes.io/name=api-gateway \
 | Terraform modules | `terraform/modules/{vpc,eks,ecr,rds,dns,secrets}` |
 | Per-service config | `helm-values/{service}.yaml` |
 | ArgoCD application CRDs | `k8s/argocd/applications/{dev,prod}/` |
-| CI pipeline | `.github/workflows/` |
+| CI (build+push) | `build-push.yml` in **application repo fork** |
+| CI (tag update) | `.github/workflows/update-image-tags.yml` |
 | Safety hooks | `.claude/settings.local.json` |
 
 ### Useful aliases

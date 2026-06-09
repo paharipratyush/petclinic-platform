@@ -38,6 +38,7 @@ resource "aws_sqs_queue" "karpenter_interruption" {
   visibility_timeout_seconds = 1200
 
   message_retention_seconds = 300
+  sqs_managed_sse_enabled   = true
 
   tags = local.common_tags
 }

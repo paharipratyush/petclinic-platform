@@ -7,8 +7,8 @@ metadata:
     app.kubernetes.io/name: argocd-rbac-cm
     app.kubernetes.io/part-of: argocd
 data:
-  # Unauthenticated users get read-only access
-  policy.default: role:readonly
+  # Unauthenticated users get no access — deny-by-default
+  policy.default: ""
 
   policy.csv: |
     # admin: full control over all applications, clusters, repos, projects
