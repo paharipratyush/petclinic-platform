@@ -1,31 +1,24 @@
 image:
   name: springcommunity/spring-petclinic-vets-service
-  tag: "3.4.1"
-
+  tag: "2cab3be"
 component: service
-
 service:
   port: 8083
-
 # prod default; dev.yaml overrides to 1
 replicaCount: 2
-
 autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 4
   targetCPUUtilizationPercentage: 70
-
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
-
 config:
   SPRING_PROFILES_ACTIVE: "docker,mysql"
   CONFIG_SERVER_URL: "http://config-server:8888"
   DISCOVERY_SERVER_URL: "http://discovery-server:8761/eureka"
   SPRING_DATASOURCE_URL: "jdbc:mysql://petclinic-dev-mysql.c1qcu40i4ohf.eu-central-1.rds.amazonaws.com:3306/petclinic"
-
 initContainers:
   - name: wait-for-config-server
     image: busybox:1.36
@@ -39,7 +32,6 @@ initContainers:
       - sh
       - -c
       - "until wget -qO- http://discovery-server:8761/actuator/health; do sleep 5; done"
-
 secrets:
   - name: SPRING_DATASOURCE_USERNAME
     secretName: rds-credentials

@@ -1,34 +1,26 @@
 image:
   name: springcommunity/spring-petclinic-config-server
-  tag: "3.4.1"
-
+  tag: "2cab3be"
 component: server
-
 service:
   port: 8888
-
 # prod default; dev.yaml overrides to 1
 replicaCount: 2
-
 # config-server never gets HPA (stateful git-backed config)
 autoscaling:
   enabled: false
-
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
-
 # config-server uses /actuator/health for ALL three probes (no /readiness or /liveness endpoints)
 probes:
   readiness:
     path: /actuator/health
   liveness:
     path: /actuator/health
-
 config:
   SPRING_PROFILES_ACTIVE: "docker"
   SPRING_CLOUD_CONFIG_SERVER_GIT_URI: "https://github.com/spring-petclinic/spring-petclinic-microservices-config"
   SPRING_CLOUD_CONFIG_SERVER_GIT_DEFAULT_LABEL: "main"
-
 initContainers: []
 secrets: []
