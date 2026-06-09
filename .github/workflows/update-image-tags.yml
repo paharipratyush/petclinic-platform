@@ -5,7 +5,7 @@ on:
     types: [app-image-built]
 
 permissions:
-  contents: none
+  contents: write
 
 jobs:
   validate:
@@ -41,6 +41,7 @@ jobs:
     uses: ./.github/workflows/reusable/update-tags.yml
     permissions:
       contents: write
+    secrets: inherit
     with:
       sha: ${{ needs.validate.outputs.sha }}
       services: ${{ needs.validate.outputs.services }}
