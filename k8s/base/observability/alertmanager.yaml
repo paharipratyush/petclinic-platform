@@ -1,10 +1,18 @@
 ---
-# Alertmanager config in a Secret (contains SMTP password placeholder).
-# Before applying to a live cluster, replace REPLACE_WITH_GMAIL_APP_PASSWORD:
-#   1. Generate a Gmail App Password at https://myaccount.google.com/apppasswords
-#   2. Edit this Secret or patch it:
-#        kubectl -n monitoring patch secret alertmanager-config \
-#          --type=json -p='[{"op":"replace","path":"/stringData/alertmanager.yml","value":"<full-config-with-real-password>"}]'
+# Alertmanager config — SMTP credentials are placeholders in Git.
+# The install-observability.sh script patches this secret at deploy time
+# by reading real values from AWS Secrets Manager (petclinic/alertmanager-smtp).
+#
+# To configure manually:
+#   1. Store credentials in Secrets Manager:
+#        aws secretsmanager create-secret \
+#          --name petclinic/alertmanager-smtp \
+#          --secret-string '{"email":"you@gmail.com","password":"xxxx xxxx xxxx xxxx"}'
+#   2. Run the install script — it auto-loads and patches:
+#        bash scripts/install-observability.sh --env dev
+#   3. Or patch directly:
+#        SMTP_EMAIL=you@gmail.com SMTP_PASSWORD="xxxx xxxx xxxx xxxx" \
+#          bash scripts/install-observability.sh --env dev
 apiVersion: v1
 kind: Secret
 metadata:
@@ -19,9 +27,9 @@ stringData:
   alertmanager.yml: |
     global:
       smtp_smarthost: smtp.gmail.com:587
-      smtp_from: anonym12303@gmail.com
-      smtp_auth_username: anonym12303@gmail.com
-      smtp_auth_password: REPLACE_WITH_GMAIL_APP_PASSWORD
+      smtp_from: REPLACE_WITH_ALERT_EMAIL
+      smtp_auth_username: REPLACE_WITH_ALERT_EMAIL
+      smtp_auth_password: REPLACE_WITH_SMTP_PASSWORD
       smtp_require_tls: true
 
     route:
@@ -41,12 +49,12 @@ stringData:
     receivers:
       - name: email-default
         email_configs:
-          - to: anonym12303@gmail.com
+          - to: REPLACE_WITH_ALERT_EMAIL
             send_resolved: true
 
       - name: email-critical
         email_configs:
-          - to: anonym12303@gmail.com
+          - to: REPLACE_WITH_ALERT_EMAIL
             send_resolved: true
 
     inhibit_rules:

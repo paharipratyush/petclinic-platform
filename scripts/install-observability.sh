@@ -8,13 +8,23 @@
 # Prerequisites:
 #   - kubectl configured for the target cluster
 #   - EKS cluster running with EBS CSI driver (for gp2 PVCs)
-#   - Internet access for PrometheusRule CRD download on first run
+#   - AWS CLI authenticated (used to auto-load SMTP credentials from Secrets Manager)
+#   - jq installed (for Secrets Manager JSON parsing)
 #
-# Optional environment variables:
-#   SMTP_PASSWORD  — Gmail App Password for Alertmanager email alerts.
-#                    If set, patches alertmanager-config secret after apply.
-#                    NEVER pass this on the command line; use:
-#                      export SMTP_PASSWORD="$(aws secretsmanager get-secret-value --secret-id petclinic/alertmanager-smtp --query SecretString --output text | jq -r .password)"
+# SMTP credentials (required for email alerts):
+#   The script auto-loads from AWS Secrets Manager: petclinic/alertmanager-smtp
+#   Secret format: {"email":"you@gmail.com","password":"xxxx xxxx xxxx xxxx"}
+#
+#   To create the secret (first-time setup):
+#     aws secretsmanager create-secret \
+#       --name petclinic/alertmanager-smtp \
+#       --secret-string '{"email":"you@gmail.com","password":"xxxx xxxx xxxx xxxx"}'
+#
+#   Override via env vars (takes precedence over Secrets Manager):
+#     export SMTP_EMAIL="you@gmail.com"
+#     export SMTP_PASSWORD="xxxx xxxx xxxx xxxx"
+#
+#   NEVER hardcode credentials here or pass them on the command line.
 #
 # Usage:
 #   bash scripts/install-observability.sh --env dev
@@ -43,15 +53,48 @@ done
 [[ -z "$ENV" ]] && usage
 [[ "$ENV" != "dev" && "$ENV" != "prod" ]] && { echo "ERROR: --env must be 'dev' or 'prod'"; exit 1; }
 
+# ── Load SMTP credentials ─────────────────────────────────────────────────────
+# Prefer explicit env vars; fall back to AWS Secrets Manager auto-load.
+SMTP_EMAIL="${SMTP_EMAIL:-""}"
 SMTP_PASSWORD="${SMTP_PASSWORD:-""}"
+
+if [[ -z "$SMTP_EMAIL" || -z "$SMTP_PASSWORD" ]]; then
+  echo "==> SMTP_EMAIL/SMTP_PASSWORD not set — attempting auto-load from Secrets Manager..."
+  if command -v aws &>/dev/null && command -v jq &>/dev/null; then
+    SECRET_JSON=$(aws secretsmanager get-secret-value \
+      --secret-id "petclinic/alertmanager-smtp" \
+      --query SecretString --output text 2>/dev/null || echo "")
+    if [[ -n "$SECRET_JSON" ]]; then
+      [[ -z "$SMTP_EMAIL" ]]    && SMTP_EMAIL="$(echo "$SECRET_JSON"    | jq -r '.email')"
+      [[ -z "$SMTP_PASSWORD" ]] && SMTP_PASSWORD="$(echo "$SECRET_JSON" | jq -r '.password')"
+      echo "  Loaded from Secrets Manager: petclinic/alertmanager-smtp"
+    else
+      echo "  WARNING: petclinic/alertmanager-smtp not found in Secrets Manager."
+      echo "  Email alerts will remain disabled (placeholder in secret)."
+      echo "  Create it with:"
+      echo "    aws secretsmanager create-secret \\"
+      echo "      --name petclinic/alertmanager-smtp \\"
+      echo "      --secret-string '{\"email\":\"you@gmail.com\",\"password\":\"xxxx xxxx xxxx xxxx\"}'"
+    fi
+  else
+    echo "  WARNING: aws or jq not found — cannot auto-load SMTP credentials."
+  fi
+fi
+
+SMTP_CONFIGURED=false
+if [[ -n "$SMTP_EMAIL" && -n "$SMTP_PASSWORD" && "$SMTP_PASSWORD" != "REPLACE_WITH_SMTP_PASSWORD" ]]; then
+  SMTP_CONFIGURED=true
+fi
 
 echo "============================================================"
 echo "  Installing Observability Stack (raw K8s manifests)"
 echo "  Environment:  $ENV"
 echo "  Namespaces:   monitoring, tracing"
-[[ -n "$SMTP_PASSWORD" ]] \
-  && echo "  SMTP:         configured (will patch secret after apply)" \
-  || echo "  SMTP:         placeholder — set SMTP_PASSWORD to enable email alerts"
+if [[ "$SMTP_CONFIGURED" == "true" ]]; then
+  echo "  SMTP:         configured for ${SMTP_EMAIL} (will patch secret after apply)"
+else
+  echo "  SMTP:         not configured — email alerts disabled"
+fi
 echo "============================================================"
 echo ""
 
@@ -77,16 +120,19 @@ echo ""
 echo "==> Step 4 — Deploying Alertmanager..."
 kubectl apply -f "$OBS_DIR/alertmanager.yaml"
 
-if [[ -n "$SMTP_PASSWORD" ]]; then
-  echo "  Patching alertmanager-config secret with real SMTP password..."
-  CURRENT_CONFIG="$(kubectl -n monitoring get secret alertmanager-config -o jsonpath='{.data.alertmanager\.yml}' | base64 -d)"
-  NEW_CONFIG="$(printf '%s' "$CURRENT_CONFIG" | sed "s|REPLACE_WITH_GMAIL_APP_PASSWORD|$SMTP_PASSWORD|g")"
+if [[ "$SMTP_CONFIGURED" == "true" ]]; then
+  echo "  Patching alertmanager-config secret with SMTP credentials..."
+  CURRENT_CONFIG="$(kubectl -n monitoring get secret alertmanager-config \
+    -o jsonpath='{.data.alertmanager\.yml}' | base64 -d)"
+  NEW_CONFIG="$(printf '%s' "$CURRENT_CONFIG" \
+    | sed "s|REPLACE_WITH_ALERT_EMAIL|${SMTP_EMAIL}|g" \
+    | sed "s|REPLACE_WITH_SMTP_PASSWORD|${SMTP_PASSWORD}|g")"
   ENCODED="$(printf '%s' "$NEW_CONFIG" | base64 | tr -d '\n')"
   kubectl -n monitoring patch secret alertmanager-config \
     --type=json \
     -p="[{\"op\":\"replace\",\"path\":\"/data/alertmanager.yml\",\"value\":\"$ENCODED\"}]"
   unset ENCODED NEW_CONFIG CURRENT_CONFIG
-  echo "  SMTP password configured."
+  echo "  SMTP credentials configured for ${SMTP_EMAIL}."
 fi
 
 kubectl rollout status deployment/alertmanager -n monitoring --timeout=120s
@@ -167,10 +213,12 @@ echo "  Zipkin:"
 echo "    kubectl port-forward svc/zipkin -n tracing 9411:9411"
 echo "    open: http://localhost:9411"
 echo ""
-if [[ -z "$SMTP_PASSWORD" ]]; then
-  echo "  NOTE: Email alerts are not active (placeholder password in secret)."
-  echo "  To enable:"
-  echo "    export SMTP_PASSWORD=<gmail-app-password>"
+if [[ "$SMTP_CONFIGURED" != "true" ]]; then
+  echo "  NOTE: Email alerts are not active (SMTP credentials not configured)."
+  echo "  To enable, store credentials in Secrets Manager and re-run:"
+  echo "    aws secretsmanager create-secret \\"
+  echo "      --name petclinic/alertmanager-smtp \\"
+  echo "      --secret-string '{\"email\":\"you@gmail.com\",\"password\":\"xxxx xxxx xxxx xxxx\"}'"
   echo "    bash $0 --env $ENV"
   echo ""
 fi
