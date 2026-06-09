@@ -14,4 +14,7 @@ autoscaling:
 podDisruptionBudget:
   enabled: false
 
-config: {}
+config:
+  # Send traces to Zipkin (installed by scripts/install-observability.sh — PETPLAT-60)
+  MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: "http://zipkin.tracing.svc.cluster.local:9411/api/v2/spans"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "1.0"

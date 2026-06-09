@@ -118,6 +118,12 @@ echo ""
 echo "==> Step 6 — Installing AWS Load Balancer Controller and provisioning ALB..."
 bash "$SCRIPT_DIR/install-lb-controller.sh" --env "$ENV"
 
+# ── Step 7: Install Observability Stack ───────────────────────────────────
+echo ""
+echo "==> Step 7 — Installing observability stack (Prometheus, Grafana, Loki, Zipkin)..."
+echo "    Set ALERT_EMAIL, SMTP_HOST, SMTP_FROM, SMTP_USERNAME, SMTP_PASSWORD env vars to enable email alerts."
+bash "$SCRIPT_DIR/install-observability.sh" --env "$ENV"
+
 # ── Done ───────────────────────────────────────────────────────────────────
 echo ""
 echo "============================================================"

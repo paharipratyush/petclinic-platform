@@ -1,0 +1,20 @@
+# This ConfigMap is created at install time by scripts/install-observability.sh
+# using: kubectl create configmap petclinic-dashboards --from-file=...
+#
+# The dashboard JSON files in this directory are inlined as ConfigMap keys:
+#   service-overview.json  — all 8 services health, request rate, error rate
+#   per-service.json       — per-service drill-down with latency percentiles
+#   jvm-metrics.json       — JVM heap, GC, threads, CPU usage
+#
+# Grafana picks these up via the sidecar (label: grafana_dashboard=1, grafana_folder=Petclinic).
+# To reload dashboards after editing JSON files, re-run the install script.
+#
+# Manual apply (if needed):
+#   kubectl create configmap petclinic-dashboards \
+#     --namespace monitoring \
+#     --from-file=service-overview.json=k8s/base/observability/grafana-dashboards/service-overview.json \
+#     --from-file=per-service.json=k8s/base/observability/grafana-dashboards/per-service.json \
+#     --from-file=jvm-metrics.json=k8s/base/observability/grafana-dashboards/jvm-metrics.json \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl label configmap petclinic-dashboards -n monitoring \
+#     grafana_dashboard=1 grafana_folder=Petclinic --overwrite
