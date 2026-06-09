@@ -5,13 +5,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION=$(cat "$SCRIPT_DIR/VERSION")
-INSTALL_URL="https://raw.githubusercontent.com/argoproj/argo-cd/${VERSION}/manifests/install.yaml"
 
 echo "Installing ArgoCD ${VERSION}..."
 
 kubectl apply -f "$SCRIPT_DIR/namespace.yaml"
-# Use --server-side to handle large CRD schemas (e.g., applicationsets CRD exceeds client-side limit)
-kubectl apply --server-side -n argocd -f "$INSTALL_URL"
+# Use --server-side + --force-conflicts to handle large CRD schemas and re-run safety
+# -n argocd is required: install.yaml does not embed namespace in resource metadata
+kubectl apply --server-side --force-conflicts -n argocd -f "$SCRIPT_DIR/install.yaml"
+
+echo "Waiting for ArgoCD CRDs to be established..."
+kubectl wait --for=condition=Established crd/applications.argoproj.io crd/applicationsets.argoproj.io crd/appprojects.argoproj.io --timeout=60s
 
 echo "Waiting for ArgoCD deployments to become ready..."
 kubectl wait deployment -n argocd \
