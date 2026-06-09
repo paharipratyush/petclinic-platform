@@ -1,6 +1,6 @@
 # Petclinic Platform — Operations Runbook
 
-**Last Updated:** 2026-06-08
+**Last Updated:** 2026-06-09
 **Purpose:** Step-by-step procedures for common operational tasks on the petclinic-platform infrastructure. Each procedure is self-contained and includes verification and rollback steps.
 
 ## Table of Contents
@@ -17,6 +17,10 @@
 10. [DNS: Create Cloudflare CNAME After ALB Provisioning](#dns-create-cloudflare-cname-after-alb-provisioning)
 11. [Infrastructure: Safe Teardown Before terraform destroy](#infrastructure-safe-teardown-before-terraform-destroy)
 12. [Secrets: Add a New Application Secret](#secrets-add-a-new-application-secret)
+13. [Services: Restart a Service](#services-restart-a-service)
+14. [Services: Scale Replicas Manually](#services-scale-replicas-manually)
+15. [ArgoCD: Roll Back to a Previous Image Tag](#argocd-roll-back-to-a-previous-image-tag)
+16. [Terraform: Plan and Apply Workflow](#terraform-plan-and-apply-workflow)
 
 ---
 
@@ -748,3 +752,204 @@ aws secretsmanager delete-secret \
   --force-delete-without-recovery \
   --region eu-central-1
 ```
+
+---
+
+## Services: Restart a Service
+
+### Procedure: Rolling restart of a petclinic service
+
+**When:** Pod is stuck, config was updated, or a secret was rotated
+**Who:** Cluster access (kubectl)
+**Time:** 1-3 minutes per service
+
+**Steps:**
+1. Trigger a rolling restart (ArgoCD will not revert this — it only reverts spec changes, not restarts):
+   ```bash
+   kubectl rollout restart deployment/{service-name} -n petclinic-{env}
+   ```
+   Example — restart all 8 services at once:
+   ```bash
+   for svc in config-server discovery-server api-gateway customers-service visits-service vets-service genai-service admin-server; do
+     kubectl rollout restart deployment/$svc -n petclinic-dev
+   done
+   ```
+
+2. Watch the rollout:
+   ```bash
+   kubectl rollout status deployment/{service-name} -n petclinic-{env} --timeout=120s
+   ```
+
+**Verify:**
+```bash
+kubectl get pods -n petclinic-{env} -l app.kubernetes.io/name={service-name}
+# All pods should be Running with READY 1/1 and a fresh AGE
+```
+
+**Rollback:**
+- A restart does not change config, so no rollback needed. If the pod fails after restart, check logs:
+  ```bash
+  kubectl logs -n petclinic-{env} deployment/{service-name} --previous
+  ```
+
+---
+
+## Services: Scale Replicas Manually
+
+### Procedure: Temporarily override replica count
+
+**When:** Load spike, debugging, or rolling back a bad deploy
+**Who:** Cluster access
+**Time:** Under 1 minute
+
+> **Note (dev environment):** ArgoCD auto-sync is enabled with `selfHeal: true` in dev. A manual scale will be reverted within ~10-15 seconds unless you suspend auto-sync first.
+
+**Steps (dev — suspend ArgoCD first):**
+```bash
+# 1. Suspend auto-sync for the app
+argocd app set {service-name}-dev --sync-policy none
+
+# 2. Scale
+kubectl scale deployment/{service-name} --replicas=3 -n petclinic-dev
+
+# 3. When done, re-enable auto-sync
+argocd app set {service-name}-dev --sync-policy automated
+```
+
+**Steps (prod — ArgoCD is manual, so no suspension needed):**
+```bash
+kubectl scale deployment/{service-name} --replicas=3 -n petclinic-prod
+```
+
+**Permanent change:** Update `replicaCount` in `helm-values/{service}.yaml` or `helm-values/prod.yaml`, commit, and let ArgoCD sync.
+
+**Verify:**
+```bash
+kubectl get deployment {service-name} -n petclinic-{env} -o jsonpath='{.spec.replicas}'
+```
+
+---
+
+## ArgoCD: Roll Back to a Previous Image Tag
+
+### Procedure: Revert a service to the previous image tag
+
+**When:** A bad image was pushed and the service is crashing or degraded
+**Who:** Cluster access + Git write access
+**Time:** 5-10 minutes
+
+**Steps:**
+1. Find the previous good tag in Git history:
+   ```bash
+   git log --oneline helm-values/{service}.yaml
+   # Example output:
+   # a1b2c3d chore(ci): update customers-service image tag to d3f4a5b
+   # 9e8f7a6 chore(ci): update customers-service image tag to 1c2d3e4
+   ```
+
+2. Roll back the tag in `helm-values/{service}.yaml`:
+   ```bash
+   # Option A: Revert to a known good SHA
+   yq -i '.image.tag = "1c2d3e4"' helm-values/{service}.yaml
+
+   # Option B: Revert the file to its state at a previous commit
+   git checkout 9e8f7a6 -- helm-values/{service}.yaml
+   ```
+
+3. Commit and push:
+   ```bash
+   git add helm-values/{service}.yaml
+   git commit -m "revert: roll back {service} to tag 1c2d3e4"
+   git push origin main
+   ```
+
+4. In dev, ArgoCD will auto-sync within ~30 seconds. In prod, trigger a manual sync:
+   ```bash
+   argocd app sync {service-name}-prod
+   ```
+
+5. Watch the rollout:
+   ```bash
+   kubectl rollout status deployment/{service-name} -n petclinic-{env} --timeout=120s
+   ```
+
+**Verify:**
+```bash
+kubectl get deployment {service-name} -n petclinic-{env} \
+  -o jsonpath='{.spec.template.spec.containers[0].image}'
+# Should show the rolled-back SHA tag
+```
+
+**Rollback of rollback:**
+```bash
+git revert HEAD  # undoes the revert commit, restoring the bad tag
+git push origin main
+# Then redeploy and investigate the root cause instead
+```
+
+---
+
+## Terraform: Plan and Apply Workflow
+
+### Procedure: Safely apply infrastructure changes
+
+**When:** Any Terraform change — adding a resource, changing config, version upgrade
+**Who:** AWS admin (IAM permissions matching the resource being changed)
+**Time:** 5-30 minutes depending on resources
+
+**Steps:**
+1. Format and validate before anything else:
+   ```bash
+   cd terraform/environments/{env}
+   terraform fmt -recursive ../../
+   terraform validate
+   ```
+
+2. Generate and review the plan:
+   ```bash
+   terraform plan -out plan.out
+   ```
+   Review the plan output carefully:
+   - `+` create (new resource — low risk)
+   - `~` update in-place (change attributes — medium risk)
+   - `-/+` destroy and recreate (check the `# forces replacement` annotation — HIGH RISK)
+   - `-` destroy (HIGH RISK — confirm this is intentional)
+
+3. Apply the saved plan:
+   ```bash
+   terraform apply plan.out
+   ```
+   Never run `terraform apply` without a saved plan file — the pre-commit hook will warn you.
+
+4. After apply, verify key outputs:
+   ```bash
+   terraform output
+   ```
+
+**Rollback:**
+- Terraform has no built-in rollback. To undo a change, revert the `.tf` source and re-apply:
+  ```bash
+  git revert HEAD
+  terraform plan -out plan.out
+  terraform apply plan.out
+  ```
+- For accidentally destroyed resources, restore from the state backup in S3 (versioning is enabled):
+  ```bash
+  # List state file versions:
+  aws s3api list-object-versions \
+    --bucket petclinic-terraform-state \
+    --prefix petclinic/{env}/terraform.tfstate
+
+  # Restore a previous version:
+  aws s3api get-object \
+    --bucket petclinic-terraform-state \
+    --key petclinic/{env}/terraform.tfstate \
+    --version-id {VERSION_ID} \
+    terraform.tfstate.bak
+  # Then import or re-create the affected resources
+  ```
+
+**Safety reminders:**
+- Always use `terraform plan -out plan.out` and review before applying.
+- Never run `terraform destroy` without reading the [Infrastructure: Safe Teardown](#infrastructure-safe-teardown-before-terraform-destroy) procedure first.
+- The `block-destroy.sh` hook blocks `terraform destroy` at the CLI level. Contact the team lead to override.

@@ -4,6 +4,7 @@
 *.tfstate.backup
 errored.tfstate
 *.tfplan
+*.plan
 plan.out
 crash.log
 override.tf

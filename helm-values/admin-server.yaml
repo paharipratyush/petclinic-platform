@@ -19,6 +19,7 @@ podDisruptionBudget:
 config:
   SPRING_PROFILES_ACTIVE: "docker"
   CONFIG_SERVER_URL: "http://config-server:8888"
+  DISCOVERY_SERVER_URL: "http://discovery-server:8761/eureka"
 
 initContainers:
   - name: wait-for-config-server

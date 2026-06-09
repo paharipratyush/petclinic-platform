@@ -495,7 +495,7 @@ spec:
 
 ## DNS and Ingress
 
-> **Implementation note:** The original design used Route 53 as authoritative DNS. Because the domain (`praty.dev`) is registered via Cloudflare Registrar, which does not support NS delegation to external providers, we use the Cloudflare Terraform provider instead. See [ADR-0004](adr/0004-cloudflare-provider-for-dns.md).
+> **Implementation note:** The original design used Route 53 as authoritative DNS. Because the domain (`praty.dev`) is registered via Cloudflare Registrar, which does not support NS delegation to external providers, we use the Cloudflare Terraform provider instead. See [ADR-0013](adr/0013-cloudflare-provider-for-dns.md).
 
 ### ACM Certificate
 
@@ -1478,7 +1478,7 @@ Developer pushes code → GitHub Actions builds + pushes ARM64 images to ECR
 
 ### Architecture Decision
 
-Karpenter replaces Cluster Autoscaler. It provisions nodes directly via EC2 Fleet API (faster scaling, better Spot diversification). See [ADR-0009](#adr-index).
+Karpenter replaces Cluster Autoscaler. It provisions nodes directly via EC2 Fleet API (faster scaling, better Spot diversification). See [ADR-0014](#adr-index).
 
 ### Prerequisites (Terraform)
 
@@ -1571,9 +1571,9 @@ Architecture Decision Records are stored in `docs/adr/`.
 | ADR-0006 | Single-AZ RDS for both environments | Accepted | Cost optimization for learning. Multi-AZ doubles RDS cost. Students learn when to enable it. |
 | ADR-0007 | Helm over plain K8s YAML | Accepted | Generic Helm chart shared across 8 services. Per-service values files. Industry-standard packaging. Enables ArgoCD GitOps. Trade-off: Helm templating is less transparent than raw YAML. |
 | ADR-0008 | ArgoCD for GitOps (CD) | Accepted | ArgoCD watches Git, syncs Helm releases. CI (GitHub Actions) pushes images and commits tags. CD is fully declarative. Dev auto-syncs, prod requires manual approval. |
-| ADR-0009 | Karpenter over Cluster Autoscaler | Pending (E-14) | Faster node provisioning, better Spot diversification, EC2 Fleet API. Industry trend replacing CAS. Trade-off: more complex IAM setup. |
-| ADR-0010 | ECR Private (production-correct pattern) | Accepted | Private ECR teaches the production pattern: IAM-controlled access, lifecycle policies, scan-on-push, tag immutability. Cost: ~$1/month — negligible. |
-| ADR-0011 | Secrets Manager for secrets storage | Accepted | Industry-standard secrets management ($0.40/secret/month, ~$1.20 total). Built-in rotation capability, fine-grained IAM. Teaches students the production-grade approach. |
+| ADR-0009 | ECR Private (production-correct pattern) | Accepted | Private ECR teaches the production pattern: IAM-controlled access, lifecycle policies, scan-on-push, tag immutability. Cost: ~$1/month — negligible. |
+| ADR-0010 | Secrets Manager + ESO for secrets storage | Accepted | Industry-standard secrets management ($0.40/secret/month, ~$1.20 total). Built-in rotation capability, fine-grained IAM. Teaches students the production-grade approach. |
+| ADR-0011 | Loki + FluentBit over CloudWatch Logs | Accepted | In-cluster logging with no per-GB AWS ingestion costs, no IRSA role, and tight Grafana integration. Trade-off: no cross-account visibility; EBS-backed storage not replicated. |
 | ADR-0012 | ARM64 (Graviton) EKS worker nodes | Accepted | t4g.small ARM64 nodes chosen for Graviton free trial (~$0 until Dec 2026). Requires linux/arm64 Docker images across all 8 services. |
 | ADR-0013 | Cloudflare Terraform provider for DNS | Accepted | Route 53 replaced by Cloudflare provider because praty.dev is on Cloudflare Registrar (no NS delegation support). Fully automated cert validation. |
-| ADR-0014 | Loki + FluentBit over CloudWatch Logs | Accepted | In-cluster logging with no per-GB AWS ingestion costs, no IRSA role, and tight Grafana integration. Trade-off: no cross-account visibility; EBS-backed storage not replicated. |
+| ADR-0014 | Karpenter over Cluster Autoscaler | Pending (E-14) | Faster node provisioning, better Spot diversification, EC2 Fleet API. Industry trend replacing CAS. Trade-off: more complex IAM setup. |
