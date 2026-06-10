@@ -1,25 +1,19 @@
 image:
   name: api-gateway
-  tag: "3.4.1"
-
+  tag: "af149ef"
 component: gateway
-
 service:
   port: 8080
-
 # prod default; dev.yaml overrides to 1
 replicaCount: 2
-
 autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 6
   targetCPUUtilizationPercentage: 70
-
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
-
 # api-gateway needs more CPU headroom (handles all inbound routing)
 resources:
   requests:
@@ -28,12 +22,10 @@ resources:
   limits:
     cpu: "1000m"
     memory: "512Mi"
-
 config:
   SPRING_PROFILES_ACTIVE: "docker"
   CONFIG_SERVER_URL: "http://config-server:8888"
   DISCOVERY_SERVER_URL: "http://discovery-server:8761/eureka"
-
 initContainers:
   - name: wait-for-config-server
     image: busybox:1.36
@@ -47,5 +39,4 @@ initContainers:
       - sh
       - -c
       - "until wget -qO- http://discovery-server:8761/actuator/health; do sleep 5; done"
-
 secrets: []
