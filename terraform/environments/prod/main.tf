@@ -53,7 +53,7 @@ module "rds" {
   instance_class          = "db.t4g.micro"
   multi_az                = false
   skip_final_snapshot     = false
-  backup_retention_period = 30
+  backup_retention_period = 0 # free-tier restriction — same as dev (FreeTierRestrictionError if > 0)
   deletion_protection     = true
 }
 
