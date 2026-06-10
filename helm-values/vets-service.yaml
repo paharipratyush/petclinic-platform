@@ -1,6 +1,6 @@
 image:
   name: vets-service
-  tag: "2cab3be"
+  tag: "a3501df"
 component: service
 service:
   port: 8083
