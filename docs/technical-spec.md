@@ -47,7 +47,7 @@
 | Environments | `dev`, `prod` |
 | Terraform Version | `>= 1.6.0` |
 | AWS Provider Version | `~> 5.0` |
-| Spring Boot Version | `4.0.1` (parent POM: `org.springframework.boot:spring-boot-starter-parent`) |
+| Spring Boot Version | `4.0.6` (parent POM: `org.springframework.boot:spring-boot-starter-parent`) |
 | Spring Cloud Version | `2025.1.0` (Oakwood) |
 | Java Version | `17` |
 

@@ -1,5 +1,8 @@
 # Helm Guide — Petclinic Platform (E-16)
 
+**Last Updated:** 2026-06-10
+**Purpose:** Reference for using and extending the single generic Helm chart shared by all 8 Spring Petclinic services.
+
 ## Overview
 
 A single generic Helm chart (`helm/petclinic-service/`) is shared by all 8 Spring Petclinic services. Per-service and per-environment configuration lives in `helm-values/`.

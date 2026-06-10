@@ -342,7 +342,10 @@ resource "aws_iam_policy" "lb_controller" {
   policy      = data.aws_iam_policy_document.lb_controller.json
 
   tags = {
-    Component = "networking"
+    Project     = var.project
+    Environment = var.environment
+    ManagedBy   = "terraform"
+    Component   = "networking"
   }
 }
 
@@ -376,7 +379,10 @@ resource "aws_iam_role" "lb_controller" {
   assume_role_policy = data.aws_iam_policy_document.lb_controller_assume.json
 
   tags = {
-    Component = "networking"
+    Project     = var.project
+    Environment = var.environment
+    ManagedBy   = "terraform"
+    Component   = "networking"
   }
 }
 
@@ -425,7 +431,10 @@ resource "aws_iam_policy" "eso" {
   policy      = data.aws_iam_policy_document.eso.json
 
   tags = {
-    Component = "secrets"
+    Project     = var.project
+    Environment = var.environment
+    ManagedBy   = "terraform"
+    Component   = "secrets"
   }
 }
 
@@ -459,7 +468,10 @@ resource "aws_iam_role" "eso" {
   assume_role_policy = data.aws_iam_policy_document.eso_assume.json
 
   tags = {
-    Component = "secrets"
+    Project     = var.project
+    Environment = var.environment
+    ManagedBy   = "terraform"
+    Component   = "secrets"
   }
 }
 
