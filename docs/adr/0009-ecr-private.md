@@ -1,4 +1,4 @@
-# ADR-0010: ECR Private Registry with Production Patterns
+# ADR-0009: ECR Private Registry with Production Patterns
 
 **Status:** Accepted
 **Date:** 2026-06-08

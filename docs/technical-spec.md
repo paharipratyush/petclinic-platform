@@ -1578,4 +1578,4 @@ Architecture Decision Records are stored in `docs/adr/`.
 | ADR-0011 | Loki + FluentBit over CloudWatch Logs | Accepted | In-cluster logging with no per-GB AWS ingestion costs, no IRSA role, and tight Grafana integration. Trade-off: no cross-account visibility; EBS-backed storage not replicated. |
 | ADR-0012 | ARM64 (Graviton) EKS worker nodes | Accepted | t4g.small ARM64 nodes chosen for Graviton free trial (~$0 until Dec 2026). Requires linux/arm64 Docker images across all 8 services. |
 | ADR-0013 | Cloudflare Terraform provider for DNS | Accepted | Route 53 replaced by Cloudflare provider because praty.dev is on Cloudflare Registrar (no NS delegation support). Fully automated cert validation. |
-| ADR-0014 | Karpenter over Cluster Autoscaler | Pending (E-14) | Faster node provisioning, better Spot diversification, EC2 Fleet API. Industry trend replacing CAS. Trade-off: more complex IAM setup. |
+| ADR-0014 | Karpenter over Cluster Autoscaler | Accepted | Faster node provisioning, better Spot diversification, EC2 Fleet API. Industry trend replacing CAS. Trade-off: more complex IAM setup. |

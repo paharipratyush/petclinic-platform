@@ -1,4 +1,4 @@
-# ADR-0011: AWS Secrets Manager with External Secrets Operator
+# ADR-0010: AWS Secrets Manager with External Secrets Operator
 
 **Status:** Accepted
 **Date:** 2026-06-08

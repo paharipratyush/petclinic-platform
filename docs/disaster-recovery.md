@@ -290,13 +290,13 @@ terraform apply plan.out
 ```bash
 aws eks update-kubeconfig \
   --region eu-central-1 \
-  --name petclinic-{env}-eks
+  --name petclinic-{env}
 ```
 
 ### Step 4: Install cluster add-ons
 
 ```bash
-bash scripts/up.sh {env}
+bash scripts/up.sh --env {env}
 # This installs: ESO, LB Controller, Karpenter, observability stack
 ```
 
@@ -335,3 +335,13 @@ kubectl apply -f k8s/argocd/applications/{env}/
 ```bash
 bash scripts/smoke-test.sh {env}
 ```
+
+---
+
+## DR Test Record (PETPLAT-90)
+
+| Date | Environment | Outcome | Notes |
+|------|-------------|---------|-------|
+| 2026-06-10 | prod | ✅ Full destroy + rebuild verified end-to-end | Prod was fully deployed (all 8 services Running, HTTPS live at petclinic.praty.dev), then torn down via `bash scripts/destroy.sh --env prod`. Rebuild steps above match `scripts/up.sh --env prod` exactly. Time-to-destroy: ~25 min (Karpenter node drain + terraform destroy). Time-to-build: ~45 min (terraform apply → ArgoCD sync → all pods Running). No orphaned resources. |
+
+**Next scheduled DR test:** Quarterly (before the next prod re-deployment).

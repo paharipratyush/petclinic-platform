@@ -1,4 +1,4 @@
-# ADR-0014: In-Cluster Logging (Loki + FluentBit) over CloudWatch Logs
+# ADR-0011: In-Cluster Logging (Loki + FluentBit) over CloudWatch Logs
 
 **Status:** Accepted
 **Date:** 2026-06-09

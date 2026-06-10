@@ -1,6 +1,6 @@
-# ADR-0009: Karpenter over Cluster Autoscaler
+# ADR-0014: Karpenter over Cluster Autoscaler
 
-**Status:** Proposed (implementation pending — E-14)
+**Status:** Accepted
 **Date:** 2026-06-09
 **PETPLAT:** E-14
 
