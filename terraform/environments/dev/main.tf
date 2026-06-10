@@ -433,6 +433,8 @@ data "aws_iam_policy_document" "eso" {
     ]
     resources = [
       "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:petclinic/${var.environment}/*",
+      # shared secret (no env prefix) — alertmanager SMTP credentials used by both envs
+      "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:petclinic/alertmanager-smtp*",
     ]
   }
 }
