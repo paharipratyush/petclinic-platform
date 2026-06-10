@@ -73,8 +73,9 @@ echo "  CRD installed."
 echo ""
 echo "==> Step 3 — Deploying Prometheus..."
 kubectl apply -f "$OBS_DIR/prometheus.yaml"
-kubectl rollout status deployment/prometheus -n monitoring --timeout=180s
-echo "  Prometheus running."
+kubectl rollout status deployment/prometheus -n monitoring --timeout=300s \
+  || echo "  WARNING: Prometheus rollout timed out — Karpenter may be provisioning a node. Check: kubectl get pods -n monitoring"
+echo "  Prometheus deployed."
 
 # ── Step 4: Deploy Alertmanager ───────────────────────────────────────────────
 echo ""
@@ -97,8 +98,9 @@ echo "  Alertmanager deployed (check pod status with: kubectl get pods -n monito
 echo ""
 echo "==> Step 5 — Deploying Loki..."
 kubectl apply -f "$OBS_DIR/loki.yaml"
-kubectl rollout status deployment/loki -n monitoring --timeout=120s
-echo "  Loki running."
+kubectl rollout status deployment/loki -n monitoring --timeout=300s \
+  || echo "  WARNING: Loki rollout timed out — Karpenter may be provisioning a node. Check: kubectl get pods -n monitoring"
+echo "  Loki deployed."
 
 # ── Step 6: Deploy FluentBit DaemonSet ────────────────────────────────────────
 echo ""
@@ -122,8 +124,9 @@ fi
 echo ""
 echo "==> Step 7 — Deploying Grafana..."
 kubectl apply -f "$OBS_DIR/grafana.yaml"
-kubectl rollout status deployment/grafana -n monitoring --timeout=120s
-echo "  Grafana running."
+kubectl rollout status deployment/grafana -n monitoring --timeout=300s \
+  || echo "  WARNING: Grafana rollout timed out — Karpenter may be provisioning a node. Check: kubectl get pods -n monitoring"
+echo "  Grafana deployed."
 
 # ── Step 8: Apply PrometheusRule alert rules ──────────────────────────────────
 echo ""
@@ -135,8 +138,9 @@ echo "  Alert rules applied."
 echo ""
 echo "==> Step 9 — Deploying Zipkin..."
 kubectl apply -f "$OBS_DIR/zipkin/zipkin.yaml"
-kubectl rollout status deployment/zipkin -n tracing --timeout=120s
-echo "  Zipkin running."
+kubectl rollout status deployment/zipkin -n tracing --timeout=300s \
+  || echo "  WARNING: Zipkin rollout timed out — Karpenter may be provisioning a node. Check: kubectl get pods -n tracing"
+echo "  Zipkin deployed."
 
 # ── Step 10: Verify ───────────────────────────────────────────────────────────
 echo ""
