@@ -17,6 +17,7 @@ spec:
       valueFiles:
         - ../../helm-values/vets-service.yaml
         - ../../helm-values/prod.yaml
+        - ../../helm-values/vets-service-prod.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: petclinic-prod

@@ -6,10 +6,12 @@
 image:
   registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod"
 
-# TODO(E-5 prod): after prod RDS is deployed, update SPRING_DATASOURCE_URL in
-# customers-service.yaml, visits-service.yaml, and vets-service.yaml to the prod RDS endpoint.
-# Do NOT set it here globally â€” it triggers Spring Boot datasource autoconfiguration in
-# non-MySQL services (e.g., genai-service) causing startup failure.
+# Prod datasource URLs for MySQL services are in per-service prod override files:
+#   helm-values/customers-service-prod.yaml
+#   helm-values/visits-service-prod.yaml
+#   helm-values/vets-service-prod.yaml
+# Update PENDING_PROD_RDS_ENDPOINT in each after: terraform -chdir=terraform/environments/prod output rds_endpoint
+# Do NOT set SPRING_DATASOURCE_URL here globally — it breaks non-MySQL services (e.g., genai-service).
 config:
   # Send traces to Zipkin (installed by scripts/install-observability.sh â€” PETPLAT-60)
   MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: "http://zipkin.tracing:9411/api/v2/spans"
