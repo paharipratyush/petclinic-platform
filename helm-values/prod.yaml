@@ -3,6 +3,10 @@
 # HPA, PDB, and replica counts are per-service in helm-values/{service}.yaml â€” they encode
 # prod-appropriate defaults. dev.yaml overrides: replicaCount=1, autoscaling/PDB disabled.
 
+# Constrained to 1 replica — 4x t4g.small nodes (11 pods/node = 44 total) leave only 8 slots for
+# petclinic-prod after system/argocd/monitoring overhead. Increase replicas when vCPU quota allows more nodes.
+replicaCount: 1
+
 image:
   registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod"
 

@@ -99,9 +99,13 @@ kubectl apply -f "$REPO_ROOT/k8s/base/namespaces/namespaces.yaml"
 
 echo ""
 echo "==> Step 8 — Apply ExternalSecret manifests to $NAMESPACE..."
-sed "s/namespace: petclinic-dev/namespace: $NAMESPACE/g" \
+# Substitute both the namespace metadata AND the Secrets Manager key prefix (petclinic/dev/ → petclinic/$ENV/).
+# Without the key substitution, prod ESO role (which only has petclinic/prod/* access) would fail on dev secret paths.
+sed -e "s/namespace: petclinic-dev/namespace: $NAMESPACE/g" \
+    -e "s|petclinic/dev/|petclinic/$ENV/|g" \
   "$REPO_ROOT/k8s/base/external-secrets/rds-credentials.yaml" | kubectl apply -f -
-sed "s/namespace: petclinic-dev/namespace: $NAMESPACE/g" \
+sed -e "s/namespace: petclinic-dev/namespace: $NAMESPACE/g" \
+    -e "s|petclinic/dev/|petclinic/$ENV/|g" \
   "$REPO_ROOT/k8s/base/external-secrets/openai-api-key.yaml" | kubectl apply -f -
 
 echo ""
