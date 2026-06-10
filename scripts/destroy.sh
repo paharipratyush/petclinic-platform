@@ -12,7 +12,9 @@
 #            stale state entries before retrying
 #
 # ECR repositories are destroyed (force_delete = true). Images must be rebuilt
-# after up.sh by pushing a commit to the app repo to trigger CI.
+# after up.sh. Trigger the CI pipeline via GitHub Actions → "CI - Build and Push"
+# → "Run workflow" (force_rebuild_all=true). Do NOT push an empty commit — the
+# dorny/paths-filter step sees no file changes and skips all builds.
 # Secrets Manager secrets are force-deleted (recovery_window_in_days = 0) and
 # can be recreated immediately by terraform apply.
 #
@@ -369,9 +371,11 @@ echo "  Destroyed (must rebuild with up.sh):"
 echo "    - EKS cluster, node groups, add-ons"
 echo "    - RDS instance (no snapshot — skip_final_snapshot = true)"
 echo "    - VPC, subnets, IGW, security groups, NAT"
-echo "    - ECR repos + all images — push a commit after up.sh to repopulate"
+echo "    - ECR repos + all images — trigger CI via workflow_dispatch after up.sh"
 echo "    - Secrets Manager secrets — recreated automatically by terraform apply"
 echo "    - Cloudflare DNS records — recreated automatically by terraform apply"
 echo ""
 echo "  To rebuild: bash scripts/up.sh --env $ENV"
+echo "  Then repopulate ECR: GitHub Actions → 'CI - Build and Push' → Run workflow"
+echo "    (force_rebuild_all=true — do NOT push an empty commit)"
 echo "============================================================"
