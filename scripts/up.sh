@@ -8,15 +8,18 @@
 #   - CLOUDFLARE_API_TOKEN exported in your shell (Zone:Read + DNS:Edit on the domain)
 #   - terraform.tfvars in terraform/environments/{env}/ with at minimum:
 #       domain_name = "yourdomain.com"   # must be a Cloudflare-managed domain
-#     (optional: openai_api_key = "sk-...")
+#     (optional: openai_api_key = "sk-...", grafana_admin_password = "...", budget_alert_email = "...")
 #
 # What this script does (in order):
-#   1. terraform apply  — provisions EKS, RDS, VPC, ECR, ACM, Cloudflare DNS records
-#   2. aws eks update-kubeconfig  — configures kubectl
-#   3. Install ArgoCD  — GitOps controller
-#   4. Apply ArgoCD Application CRDs + RBAC  — registers all 16 apps
-#   5. Install External Secrets Operator  — syncs RDS + OpenAI secrets
-#   6. Install AWS LB Controller + Ingress  — provisions ALB, updates DNS
+#   1.   terraform apply — provisions EKS, RDS, VPC, ECR, ACM, Cloudflare DNS records
+#   1b.  Auto-update RDS endpoint in helm-values/ if it changed (happens on every rebuild)
+#   2.   aws eks update-kubeconfig — configures kubectl
+#   3.   Install ArgoCD — GitOps controller
+#   3.5. Install Karpenter autoscaler + metrics-server + NodePool
+#   4.   Apply ArgoCD Application CRDs + RBAC — registers all 16 apps
+#   5.   Install External Secrets Operator — syncs RDS + OpenAI secrets
+#   6.   Install AWS LB Controller + Ingress — provisions ALB, updates DNS
+#   7.   Install Observability stack
 #
 # Usage (from project root):
 #   bash scripts/up.sh --env dev
@@ -50,6 +53,17 @@ done
 TF_DIR="$REPO_ROOT/terraform/environments/$ENV"
 NAMESPACE="petclinic-$ENV"
 
+# ── Pre-flight: validate CLOUDFLARE_API_TOKEN ──────────────────────────────
+# This is the only required env var not storable in terraform.tfvars (it is a
+# provider credential, not a Terraform variable). Catch it here rather than
+# letting Terraform fail 10 minutes into a 20-minute apply.
+if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+  echo "ERROR: CLOUDFLARE_API_TOKEN is not set."
+  echo "  export CLOUDFLARE_API_TOKEN=<your Cloudflare API token>"
+  echo "  Required scope: Zone:Read + DNS:Edit on the domain"
+  exit 1
+fi
+
 echo "============================================================"
 echo "  Bringing up petclinic-$ENV"
 echo "============================================================"
@@ -58,12 +72,49 @@ echo ""
 # ── Step 1: Terraform apply ────────────────────────────────────────────────
 echo "==> Step 1 — Terraform apply (EKS, RDS, VPC, ACM, Cloudflare DNS)..."
 echo "    This takes approximately 15-20 minutes on first run."
+
+# Clean up stale files left by a previous destroy run. These are harmless but
+# confusing — terraform ignores them, but they pollute the working directory.
+for _stale in "$TF_DIR/errored.tfstate" "$TF_DIR/destroy.plan" "$TF_DIR/plan.out"; do
+  [[ -f "$_stale" ]] && { echo "  Removing stale $(basename "$_stale")..."; rm -f "$_stale"; }
+done
+
 tf -chdir="$TF_DIR" init -upgrade
 tf -chdir="$TF_DIR" plan -out /tmp/petclinic-$ENV.plan
 tf -chdir="$TF_DIR" apply /tmp/petclinic-$ENV.plan
 rm -f /tmp/petclinic-$ENV.plan
 
 CLUSTER_NAME=$(tf -chdir="$TF_DIR" output -raw cluster_name)
+
+# ── Step 1b: Auto-update RDS endpoint in helm-values if it changed ─────────
+# RDS gets a new hostname (random AWS suffix) on every destroy/rebuild.
+# If the endpoint in helm-values/ doesn't match what Terraform just created,
+# update it and push so ArgoCD deploys with the correct datasource URL.
+echo ""
+echo "==> Step 1b — Checking RDS endpoint..."
+RDS_ENDPOINT=$(tf -chdir="$TF_DIR" output -raw rds_endpoint 2>/dev/null || echo "")
+if [[ -n "$RDS_ENDPOINT" ]]; then
+  if [[ "$ENV" == "dev" ]]; then
+    HV_FILES=("helm-values/customers-service.yaml" "helm-values/visits-service.yaml" "helm-values/vets-service.yaml")
+  else
+    HV_FILES=("helm-values/customers-service-prod.yaml" "helm-values/visits-service-prod.yaml" "helm-values/vets-service-prod.yaml")
+  fi
+  CURRENT_EP=$(grep -m1 "SPRING_DATASOURCE_URL" "$REPO_ROOT/${HV_FILES[0]}" \
+    | sed 's|.*jdbc:mysql://\([^:]*\):.*|\1|' | tr -d ' ' 2>/dev/null || echo "")
+  if [[ -n "$CURRENT_EP" && "$CURRENT_EP" != "$RDS_ENDPOINT" ]]; then
+    echo "  RDS endpoint changed: $CURRENT_EP → $RDS_ENDPOINT"
+    echo "  Updating helm-values datasource URLs and pushing..."
+    for f in "${HV_FILES[@]}"; do
+      sed -i "s|jdbc:mysql://[^:]*:3306|jdbc:mysql://$RDS_ENDPOINT:3306|g" "$REPO_ROOT/$f"
+    done
+    git -C "$REPO_ROOT" add "${HV_FILES[@]}"
+    git -C "$REPO_ROOT" commit -m "fix($ENV): update RDS endpoint to $RDS_ENDPOINT"
+    git -C "$REPO_ROOT" push origin main \
+      || echo "  WARNING: git push failed — update helm-values/ manually then push before ArgoCD syncs"
+  else
+    echo "  RDS endpoint unchanged ($RDS_ENDPOINT)."
+  fi
+fi
 
 echo ""
 echo "  ┌──────────────────────────────────────────────────────────┐"
@@ -100,6 +151,40 @@ echo "    Waiting for ArgoCD deployments to be available (up to 5 minutes)..."
 kubectl wait deployment -n argocd \
   argocd-server argocd-repo-server argocd-applicationset-controller argocd-notifications-controller \
   --for=condition=Available --timeout=300s
+
+# ── Step 3.5: Install Karpenter autoscaler + metrics-server + NodePool ──────
+echo ""
+echo "==> Step 3.5 — Installing Karpenter autoscaler..."
+KARPENTER_ROLE_ARN=$(tf -chdir="$TF_DIR" output -raw karpenter_role_arn)
+KARPENTER_QUEUE=$(tf -chdir="$TF_DIR" output -raw karpenter_queue_name)
+
+helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
+  --version 1.5.0 \
+  --namespace kube-system \
+  --set settings.clusterName="$CLUSTER_NAME" \
+  --set settings.interruptionQueue="$KARPENTER_QUEUE" \
+  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$KARPENTER_ROLE_ARN" \
+  --set controller.resources.requests.cpu=100m \
+  --set controller.resources.requests.memory=256Mi \
+  --set controller.resources.limits.cpu=1 \
+  --set controller.resources.limits.memory=1Gi \
+  --wait
+
+echo "    Waiting for Karpenter CRDs to be established..."
+kubectl wait --for=condition=Established \
+  crd/nodepools.karpenter.sh \
+  crd/ec2nodeclasses.karpenter.k8s.aws \
+  --timeout=60s
+
+echo "    Applying NodePool and EC2NodeClass..."
+# nodepool.yaml is written for 'petclinic-dev'. Substitute env name so the
+# same file works for prod (subnetSelectorTerms, securityGroupSelectorTerms,
+# and instanceProfile all use the cluster/env name as the discovery tag value).
+sed "s/petclinic-dev/petclinic-$ENV/g" \
+  "$REPO_ROOT/k8s/base/karpenter/nodepool.yaml" | kubectl apply -f -
+
+echo "    Installing metrics-server (required for HPA)..."
+kubectl apply -f "$REPO_ROOT/k8s/base/karpenter/metrics-server.yaml"
 
 # ── Step 4: Apply ArgoCD Application CRDs + RBAC ──────────────────────────
 echo ""

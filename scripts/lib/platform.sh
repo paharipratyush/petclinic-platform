@@ -131,3 +131,21 @@ kubectl() {
     command "$_KUBECTL_BIN" "$@"
   fi
 }
+
+# ── aws wrapper ────────────────────────────────────────────────────────────────
+# On Git Bash (Windows), MSYS automatically converts arguments that start with /
+# to Windows paths before passing them to native executables. This breaks AWS CLI
+# calls with slash-prefixed resource names (SSM parameter paths, ARN prefixes,
+# S3 object keys, etc.) — e.g., /petclinic/dev/alb-dns-name becomes
+# C:\petclinic\dev\alb-dns-name and the call fails with ValidationException.
+#
+# MSYS_NO_PATHCONV=1 disables this conversion for the duration of the command.
+# It is a no-op on Linux and macOS so this wrapper is safe on all platforms.
+
+aws() {
+  if [[ "$_PLATFORM" == "gitbash" ]]; then
+    MSYS_NO_PATHCONV=1 command aws "$@"
+  else
+    command aws "$@"
+  fi
+}
