@@ -258,6 +258,29 @@ if [[ "$ENV" == "prod" ]]; then
     || echo "  Could not disable deletion protection (instance may not exist — continuing)."
   # Allow a few seconds for the modification to take effect
   sleep 10
+
+  # If a final snapshot from a previous destroy exists, delete it so Terraform
+  # can create a fresh one. Second prod destroy fails with DBSnapshotAlreadyExists
+  # if the previous final snapshot is still present.
+  FINAL_SNAPSHOT="${RDS_ID}-final"
+  echo "  Checking for existing final snapshot ($FINAL_SNAPSHOT)..."
+  SNAP_STATUS=$(aws rds describe-db-snapshots \
+    --db-snapshot-identifier "$FINAL_SNAPSHOT" \
+    --region "$REGION" \
+    --query 'DBSnapshots[0].Status' \
+    --output text 2>/dev/null || echo "")
+  if [[ "$SNAP_STATUS" == "available" ]]; then
+    echo "  Deleting $FINAL_SNAPSHOT (will be re-created during this destroy)..."
+    aws rds delete-db-snapshot \
+      --db-snapshot-identifier "$FINAL_SNAPSHOT" \
+      --region "$REGION" > /dev/null \
+      && echo "  Snapshot deleted." \
+      || echo "  WARNING: Could not delete snapshot — destroy may fail with DBSnapshotAlreadyExists."
+    echo "  Waiting 30s for snapshot deletion to complete..."
+    sleep 30
+  elif [[ -n "$SNAP_STATUS" && "$SNAP_STATUS" != "None" ]]; then
+    echo "  WARNING: Snapshot $FINAL_SNAPSHOT exists (status: $SNAP_STATUS) — destroy may fail."
+  fi
 fi
 
 echo ""
@@ -389,7 +412,11 @@ echo "      the zone itself is not managed by Terraform)"
 echo ""
 echo "  Destroyed (must rebuild with up.sh):"
 echo "    - EKS cluster, node groups, add-ons"
-echo "    - RDS instance (no snapshot — skip_final_snapshot = true)"
+if [[ "$ENV" == "prod" ]]; then
+  echo "    - RDS instance (final snapshot: petclinic-prod-mysql-final created in AWS)"
+else
+  echo "    - RDS instance (no snapshot — skip_final_snapshot = true)"
+fi
 echo "    - VPC, subnets, IGW, security groups, NAT"
 echo "    - ECR repos + all images — trigger CI via workflow_dispatch after up.sh"
 echo "    - Secrets Manager secrets — recreated automatically by terraform apply"

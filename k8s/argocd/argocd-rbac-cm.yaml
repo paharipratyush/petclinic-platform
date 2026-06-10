@@ -19,7 +19,8 @@ data:
     p, role:admin, accounts, *, *, allow
     p, role:admin, gpgkeys, *, *, allow
     p, role:admin, logs, get, */*, allow
-    p, role:admin, exec, create, */*, allow
+    p, role:admin, exec, create, dev/*, allow
+    p, role:admin, exec, create, prod/*, allow
 
     # developer: view all; sync, action, and delete only in dev environment
     p, role:developer, applications, get, */*, allow

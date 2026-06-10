@@ -1349,3 +1349,91 @@ Complete rebuild procedure: [`docs/disaster-recovery.md Â§ Infrastructure Rebu
 | 8 | Run smoke test: `bash scripts/smoke-test.sh {env}` | 2 min |
 
 **Total rebuild time target: < 30 minutes** (assumes images already exist in ECR).
+
+---
+
+## Known Issues and Workarounds
+
+### KI-001: MSYS_NO_PATHCONV=1 Required on Git Bash / Windows
+
+**Symptom:** AWS CLI commands that accept a path-style parameter (e.g., SSM parameter names `/petclinic/dev/alb-dns-name`) fail with a `ValidationException: Parameter name must be a fully qualified name` error when run from Git Bash on Windows.
+
+**Root cause:** MSYS (the POSIX layer under Git Bash) converts any argument starting with `/` to a Windows path. `/petclinic/dev/alb-dns-name` becomes `C:\petclinic\dev\alb-dns-name` before the AWS CLI ever sees it.
+
+**Fix:** Prefix the AWS CLI call with `MSYS_NO_PATHCONV=1`:
+```bash
+MSYS_NO_PATHCONV=1 aws ssm put-parameter \
+  --name "/petclinic/dev/alb-dns-name" \
+  ...
+```
+This env var is a no-op on Linux and macOS — it is safe to include unconditionally.
+
+**Affected scripts:** `install-lb-controller.sh` already includes this prefix. Apply the same pattern anywhere an AWS CLI call uses a `/`-prefixed path argument.
+
+---
+
+### KI-002: ECR Empty After Destroy — Use workflow_dispatch to Rebuild Images
+
+**Symptom:** After `destroy.sh` + `up.sh`, pods get `ErrImagePull` or `ImagePullBackOff`. ECR repositories are recreated empty by Terraform; images must be rebuilt.
+
+**Root cause:** `destroy.sh` deletes ECR repos (including all images). `up.sh` re-creates the empty repos. The CI pipeline (`build-push.yml`) is triggered by file changes in the application repo — if no source files changed since the last push, `dorny/paths-filter` detects zero changes and skips all builds.
+
+**Wrong approach:** Pushing an empty commit or dummy file change. This is fragile and pollutes Git history.
+
+**Correct approach:** Use GitHub Actions `workflow_dispatch` to force a full rebuild:
+1. Go to the application repo fork on GitHub
+2. Actions → "CI - Build and Push" → Run workflow
+3. Set `force_rebuild_all` = `true`
+4. Click "Run workflow"
+
+All 8 services will be built and pushed to both `petclinic-dev` and `petclinic-prod` ECR repos.
+
+---
+
+### KI-003: ESO Must Be Ready Before ArgoCD Apps Are Registered
+
+**Symptom:** On a fresh `up.sh` run in dev, pods for `customers-service`, `visits-service`, `vets-service`, and `genai-service` immediately fail with `CreateContainerConfigError`. `kubectl describe pod` shows `Error: secret "rds-credentials" not found` or `secret "openai-api-key" not found`.
+
+**Root cause:** Dev ArgoCD auto-sync fires immediately after `kubectl apply -f k8s/argocd/applications/dev/`. If the External Secrets Operator `SecretStore` is not yet ready, the ExternalSecret CRs cannot sync, so the K8s Secrets referenced by pods do not exist yet.
+
+**Fix:** Already applied in `up.sh` — ESO is installed (Step 4) before ArgoCD apps are registered (Step 5). If you see this issue on a manual run, install ESO first:
+```bash
+bash scripts/install-eso.sh --env dev
+# Wait for ESO to show "SecretSyncedError" or "SecretSynced" on ExternalSecrets:
+kubectl get externalsecret -n petclinic-dev
+# Then register ArgoCD apps:
+kubectl apply -f k8s/argocd/appproject-dev.yaml -n argocd
+kubectl apply -f k8s/argocd/applications/dev/ -n argocd
+```
+
+---
+
+### KI-004: Second Prod Destroy Fails with DBSnapshotAlreadyExists
+
+**Symptom:** `terraform destroy` on prod fails with:
+```
+Error: creating DB Snapshot: DBSnapshotAlreadyExists: Cannot create the snapshot because a snapshot with the identifier "petclinic-prod-mysql-final" already exists.
+```
+
+**Root cause:** Prod uses `skip_final_snapshot = false`. Terraform creates `petclinic-prod-mysql-final` on the first destroy. On the second destroy, the snapshot already exists and Terraform cannot create it again.
+
+**Fix:** Already applied in `destroy.sh` Step 1.8 — the script checks for and deletes the existing final snapshot before running `terraform destroy`. If you hit this manually:
+```bash
+aws rds delete-db-snapshot \
+  --db-snapshot-identifier petclinic-prod-mysql-final \
+  --region eu-central-1
+# Wait ~30 seconds, then re-run terraform destroy
+```
+
+---
+
+### KI-005: Karpenter NodePool Tag Substitution for Prod
+
+**Symptom:** Karpenter does not provision nodes in prod, or nodes are provisioned into the wrong cluster.
+
+**Root cause:** `k8s/base/karpenter/nodepool.yaml` is written for `petclinic-dev`. It uses `petclinic-dev` in `subnetSelectorTerms`, `securityGroupSelectorTerms`, and `instanceProfile`. Running `kubectl apply -f nodepool.yaml` directly in prod would configure Karpenter to use dev resources.
+
+**Fix:** `up.sh` already applies the substitution: `sed "s/petclinic-dev/petclinic-${ENV}/g" nodepool.yaml | kubectl apply -f -`. If applying manually, always use:
+```bash
+sed "s/petclinic-dev/petclinic-prod/g" k8s/base/karpenter/nodepool.yaml | kubectl apply -f -
+```

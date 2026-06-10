@@ -16,8 +16,8 @@
 #   2.   aws eks update-kubeconfig — configures kubectl
 #   3.   Install ArgoCD — GitOps controller
 #   3.5. Install Karpenter autoscaler + metrics-server + NodePool
-#   4.   Apply ArgoCD Application CRDs + RBAC — registers all 16 apps
-#   5.   Install External Secrets Operator — syncs RDS + OpenAI secrets
+#   4.   Install External Secrets Operator — syncs RDS + OpenAI secrets before ArgoCD
+#   5.   Apply ArgoCD Application CRDs + RBAC — registers all 16 apps (secrets ready)
 #   6.   Install AWS LB Controller + Ingress — provisions ALB, updates DNS
 #   7.   Install Observability stack
 #
@@ -186,18 +186,22 @@ sed "s/petclinic-dev/petclinic-$ENV/g" \
 echo "    Installing metrics-server (required for HPA)..."
 kubectl apply -f "$REPO_ROOT/k8s/base/karpenter/metrics-server.yaml"
 
-# ── Step 4: Apply ArgoCD Application CRDs + RBAC ──────────────────────────
+# ── Step 4: Install External Secrets Operator ─────────────────────────────
+# ESO must be ready before ArgoCD apps are registered. Dev auto-sync fires
+# immediately after app registration; pods that need rds-credentials or
+# openai-api-key will fail with CreateContainerConfigError until the
+# SecretStore is available.
 echo ""
-echo "==> Step 4 — Applying ArgoCD Application CRDs and RBAC..."
+echo "==> Step 4 — Installing External Secrets Operator..."
+bash "$SCRIPT_DIR/install-eso.sh" --env "$ENV"
+
+# ── Step 5: Apply ArgoCD Application CRDs + RBAC ──────────────────────────
+echo ""
+echo "==> Step 5 — Applying ArgoCD Application CRDs and RBAC..."
 kubectl apply -f "$REPO_ROOT/k8s/argocd/appproject-${ENV}.yaml" -n argocd
 kubectl apply -f "$REPO_ROOT/k8s/argocd/applications/$ENV/" -n argocd
 kubectl apply -f "$REPO_ROOT/k8s/argocd/argocd-rbac-cm.yaml" -n argocd
 echo "    AppProject and Applications registered in ArgoCD."
-
-# ── Step 5: Install External Secrets Operator ─────────────────────────────
-echo ""
-echo "==> Step 5 — Installing External Secrets Operator..."
-bash "$SCRIPT_DIR/install-eso.sh" --env "$ENV"
 
 # ── Step 6: Install ALB Controller + Ingress + DNS ────────────────────────
 echo ""

@@ -95,7 +95,7 @@ data "aws_iam_policy_document" "lb_controller" {
     sid       = "CreateServiceLinkedRole"
     effect    = "Allow"
     actions   = ["iam:CreateServiceLinkedRole"]
-    resources = ["*"]
+    resources = ["arn:aws:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/*"]
     condition {
       test     = "StringEquals"
       variable = "iam:AWSServiceName"
@@ -140,14 +140,25 @@ data "aws_iam_policy_document" "lb_controller" {
   }
 
   statement {
-    sid    = "ManageEC2SecurityGroups"
+    sid    = "ManageEC2SecurityGroupRules"
     effect = "Allow"
     actions = [
       "ec2:AuthorizeSecurityGroupIngress",
       "ec2:RevokeSecurityGroupIngress",
-      "ec2:CreateSecurityGroup",
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid       = "CreateSecurityGroup"
+    effect    = "Allow"
+    actions   = ["ec2:CreateSecurityGroup"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:Vpc"
+      values   = ["arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:vpc/${module.vpc.vpc_id}"]
+    }
   }
 
   statement {
@@ -399,10 +410,10 @@ data "aws_caller_identity" "current" {}
 module "secrets" {
   source = "../../modules/secrets"
 
-  project                = var.project
-  environment            = var.environment
-  openai_api_key         = var.openai_api_key
-  grafana_admin_password = var.grafana_admin_password
+  project                 = var.project
+  environment             = var.environment
+  openai_api_key          = var.openai_api_key
+  grafana_admin_password  = var.grafana_admin_password
   recovery_window_in_days = 0
 
   tags = {

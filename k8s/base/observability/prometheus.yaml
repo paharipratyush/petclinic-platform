@@ -71,6 +71,41 @@ data:
         static_configs:
           - targets:
               - genai-service.petclinic-dev:8084
+
+      - job_name: api-gateway-prod
+        metrics_path: /actuator/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - api-gateway.petclinic-prod:8080
+
+      - job_name: customers-service-prod
+        metrics_path: /actuator/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - customers-service.petclinic-prod:8081
+
+      - job_name: visits-service-prod
+        metrics_path: /actuator/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - visits-service.petclinic-prod:8082
+
+      - job_name: vets-service-prod
+        metrics_path: /actuator/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - vets-service.petclinic-prod:8083
+
+      - job_name: genai-service-prod
+        metrics_path: /actuator/prometheus
+        scrape_interval: 15s
+        static_configs:
+          - targets:
+              - genai-service.petclinic-prod:8084
 ---
 # Alert rules loaded by raw Prometheus via rule_files glob.
 # PodRestartLoop and HighMemoryUsage require kube-state-metrics; defined here per spec.

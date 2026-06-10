@@ -51,6 +51,7 @@ resource "aws_eks_cluster" "main" {
     security_group_ids      = [var.cluster_sg_id]
     endpoint_public_access  = true
     endpoint_private_access = false
+    public_access_cidrs     = var.eks_public_access_cidrs
   }
 
   # api + audit + authenticator per technical spec (PETPLAT-12)
@@ -137,7 +138,7 @@ resource "aws_launch_template" "node" {
     device_name = "/dev/xvda" # root volume on AL2 ARM64 AMIs
     ebs {
       volume_size           = var.node_disk_size
-      volume_type           = "gp2"
+      volume_type           = "gp3"
       encrypted             = true
       delete_on_termination = true
     }

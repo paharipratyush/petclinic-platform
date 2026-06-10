@@ -106,6 +106,12 @@ variable "addon_version_ebs_csi" {
   default     = "v1.61.1-eksbuild.1"
 }
 
+variable "eks_public_access_cidrs" {
+  description = "CIDR blocks allowed to reach the EKS public API endpoint. Default allows any IP; restrict to known CIDRs in production."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 variable "tags" {
   description = "Additional tags to merge with default resource tags"
   type        = map(string)
