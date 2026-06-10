@@ -113,6 +113,28 @@ kubectl get pods -n petclinic-dev
 # Expected: 8 pods, all 1/1 Running (startup order: config, discovery, then others)
 ```
 
+### Granting cluster access to additional users
+
+The EKS cluster uses EKS access entries (not `aws-auth` ConfigMap). To grant another IAM user or role cluster-admin access, add their ARN to the `admin_iam_arns` variable in the environment's Terraform:
+
+```hcl
+# terraform/environments/dev/terraform.tfvars
+admin_iam_arns = [
+  "arn:aws:iam::568521409121:user/alice",
+  "arn:aws:iam::568521409121:role/engineer-role",
+]
+```
+
+Then apply:
+
+```bash
+cd terraform/environments/dev
+terraform plan -out plan.out
+terraform apply plan.out
+```
+
+The caller identity that ran the last `terraform apply` always has access automatically — no need to add it explicitly. The same variable exists in `terraform/environments/prod/terraform.tfvars`.
+
 ---
 
 ## Explore the Running Application

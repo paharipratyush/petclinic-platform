@@ -3,14 +3,8 @@
 # HPA, PDB, and replica counts are per-service in helm-values/{service}.yaml â€” they encode
 # prod-appropriate defaults. dev.yaml overrides: replicaCount=1, autoscaling/PDB disabled.
 
-# TODO(PETPLAT-85): uncomment after CI/CD pipeline pushes images to ECR.
-# Until then, per-service image.name holds the full Docker Hub path (springcommunity/...)
-# and image.registry must remain empty to avoid rendering an invalid ECR+DockerHub composite path.
-# After PETPLAT-85:
-#   1. Set image.registry below to the ECR prod path
-#   2. Revert image.name in each per-service file to the short service name (e.g., "customers-service")
-# image:
-#   registry: "<ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod"
+image:
+  registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod"
 
 # TODO(E-5 prod): after prod RDS is deployed, update SPRING_DATASOURCE_URL in
 # customers-service.yaml, visits-service.yaml, and vets-service.yaml to the prod RDS endpoint.
