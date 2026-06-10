@@ -18,25 +18,30 @@ resource "aws_acm_certificate" "main" {
 }
 
 # ACM validation CNAMEs in Cloudflare.
-# ACM emits the same resource_record_name for both *.domain and domain SANs.
-# The grouping operator (...) deduplicates them so only one Cloudflare record is created.
+# Keyed by dvo.domain_name ("praty.dev" / "*.praty.dev") because dvo.resource_record_name
+# is only known after the ACM cert is created — using it as a for_each key causes
+# "Invalid for_each argument" on the first apply. domain_name is known at plan time.
+# allow_overwrite = true handles the case where *.domain and domain SANs produce the
+# same validation CNAME (AWS emits two domain_validation_options entries with identical
+# resource_record_* values); the second record resource overwrites the first harmlessly.
 # proxied = false is required — Cloudflare proxy cannot front ACM validation CNAMEs.
 resource "cloudflare_record" "cert_validation" {
   for_each = {
     for dvo in aws_acm_certificate.main.domain_validation_options :
-      dvo.resource_record_name => {
+      dvo.domain_name => {
         name    = trimsuffix(trimsuffix(dvo.resource_record_name, ".${var.domain_name}."), ".")
         content = trimsuffix(dvo.resource_record_value, ".")
         type    = dvo.resource_record_type
-      }...
+      }
   }
 
-  zone_id = data.cloudflare_zone.main.id
-  name    = each.value[0].name
-  content = each.value[0].content
-  type    = each.value[0].type
-  ttl     = 60
-  proxied = false
+  zone_id         = data.cloudflare_zone.main.id
+  name            = each.value.name
+  content         = each.value.content
+  type            = each.value.type
+  ttl             = 60
+  proxied         = false
+  allow_overwrite = true
 }
 
 # Blocks until ACM transitions the certificate status to ISSUED.
