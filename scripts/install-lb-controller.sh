@@ -98,8 +98,9 @@ echo "==> Step 6 — Apply Ingress manifest with cert ARN and SG substituted..."
 sed \
   -e "s|CERTIFICATE_ARN_PLACEHOLDER|$CERT_ARN|g" \
   -e "s|ALB_SG_PLACEHOLDER|$ALB_SG_ID|g" \
+  -e "s|namespace: petclinic-dev|namespace: $NAMESPACE|g" \
   "$REPO_ROOT/k8s/base/ingress/ingress.yaml" \
-  | kubectl apply -f - -n "$NAMESPACE"
+  | kubectl apply -f -
 
 echo ""
 echo "==> Step 7 — Wait for ALB to be provisioned (this takes ~2 minutes)..."

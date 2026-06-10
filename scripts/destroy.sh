@@ -241,6 +241,26 @@ fi
 #      before retrying so Terraform can plan the destroy.
 
 echo ""
+echo "==> Step 1.8 — Pre-destroy RDS preparation..."
+
+RDS_ID="petclinic-${ENV}-mysql"
+if [[ "$ENV" == "prod" ]]; then
+  # Prod RDS has deletion_protection=true and skip_final_snapshot=false.
+  # Deletion protection must be disabled before terraform destroy can remove it.
+  # The final snapshot (${RDS_ID}-final) will be created automatically by Terraform.
+  echo "  Disabling RDS deletion protection on $RDS_ID (prod requirement)..."
+  aws rds modify-db-instance \
+    --db-instance-identifier "$RDS_ID" \
+    --no-deletion-protection \
+    --apply-immediately \
+    --region "$REGION" > /dev/null 2>&1 \
+    && echo "  Deletion protection disabled." \
+    || echo "  Could not disable deletion protection (instance may not exist — continuing)."
+  # Allow a few seconds for the modification to take effect
+  sleep 10
+fi
+
+echo ""
 echo "==> Step 2 — Running terraform destroy..."
 
 VPC_ID=$(tf -chdir="$TF_DIR" output -raw vpc_id 2>/dev/null || echo "")

@@ -106,8 +106,9 @@ resource "aws_db_instance" "main" {
   backup_window           = "03:00-04:00"
   maintenance_window      = "Mon:04:00-Mon:05:00"
 
-  skip_final_snapshot = var.skip_final_snapshot
-  deletion_protection = var.deletion_protection
+  skip_final_snapshot       = var.skip_final_snapshot
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${local.identifier}-final"
+  deletion_protection       = var.deletion_protection
 
   tags = merge(local.base_tags, { Name = local.identifier })
 
