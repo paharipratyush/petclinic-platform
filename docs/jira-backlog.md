@@ -1,8 +1,18 @@
 # Jira Backlog — Petclinic Platform
 
+**Last Updated:** 2026-06-10
+**Purpose:** Full sprint backlog for the petclinic-platform — 17 epics, 108 stories covering all infrastructure from VPC to GitOps.
+
 **Project Key:** PETPLAT (suggested)
 **Board:** Kanban or Scrum
 **Workflow:** Backlog → To Do → In Progress → In Review → Done
+
+## Table of Contents
+
+1. [Epics Overview](#epics-overview)
+2. [Epic Dependencies](#epic-dependencies)
+3. [Epic Details](#epic-details)
+4. [Summary](#summary)
 
 ---
 

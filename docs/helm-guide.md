@@ -3,6 +3,23 @@
 **Last Updated:** 2026-06-10
 **Purpose:** Reference for using and extending the single generic Helm chart shared by all 8 Spring Petclinic services.
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Chart Structure](#chart-structure)
+3. [Values Hierarchy](#values-hierarchy)
+4. [Image Registry](#image-registry)
+5. [Probe Paths](#probe-paths)
+6. [Deploying a Service (Manual)](#deploying-a-service-manual)
+7. [Rendering Templates (Debugging)](#rendering-templates-debugging)
+8. [Validating All 16 Releases](#validating-all-16-releases)
+9. [ArgoCD Integration](#argocd-integration)
+10. [Adding a New Service](#adding-a-new-service)
+11. [Security Constraints](#security-constraints)
+12. [HPA and PDB Reference](#hpa-and-pdb-reference)
+
+---
+
 ## Overview
 
 A single generic Helm chart (`helm/petclinic-service/`) is shared by all 8 Spring Petclinic services. Per-service and per-environment configuration lives in `helm-values/`.
@@ -58,25 +75,31 @@ All keys are defined here with sensible defaults. Per-service and env files over
 ### helm-values/{env}.yaml — per-environment overrides
 
 **dev.yaml** — always overrides:
-- `image.registry: ""` — empty; `image.name` holds the full Docker Hub path (see [Image Registry Migration](#image-registry-migration))
+- `image.registry` → ECR petclinic-dev path
 - `replicaCount: 1`
 - `autoscaling.enabled: false`
 - `podDisruptionBudget.enabled: false`
-- `config.SPRING_DATASOURCE_URL` — dev RDS endpoint
 
-**prod.yaml** — only sets:
+**prod.yaml** — always overrides:
 - `image.registry` → ECR petclinic-prod path
-- `config.SPRING_DATASOURCE_URL` — prod RDS endpoint (update after E-5 prod RDS apply)
 - Per-service replica counts, HPA, and PDB come from the per-service values file.
+- `config.SPRING_DATASOURCE_URL` must be updated in each MySQL service's values file after the prod RDS endpoint is known (do NOT set globally here — it causes datasource autoconfiguration on non-MySQL services).
 
-## Image Registry Migration
+## Image Registry
 
-**Current state (pre-CI/CD):** `image.registry` is empty in dev.yaml. `image.name` in each per-service file holds the full Docker Hub path (e.g., `springcommunity/spring-petclinic-api-gateway`). The image helper in `_helpers.tpl` renders `{name}:{tag}` when registry is empty.
+The image reference is assembled from three values:
 
-**After CI/CD is built (PETPLAT-85):**
-1. Set `image.registry` in `dev.yaml` to the ECR dev path (`{account}.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev`)
-2. Revert each per-service `image.name` to just the service name (e.g., `api-gateway`)
-3. The image helper will then render `{registry}/{name}:{tag}`
+```
+{image.registry}/{image.name}:{image.tag}
+```
+
+- `image.registry` — set in the env file (`dev.yaml` / `prod.yaml`)
+  - dev: `568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev`
+  - prod: `568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod`
+- `image.name` — short service name in the per-service file (e.g., `api-gateway`)
+- `image.tag` — 7-char git SHA; CI updates this via `yq` on every push
+
+When `image.registry` is empty the helper renders `{name}:{tag}` (useful for local dev without ECR).
 
 ## Probe Paths
 
