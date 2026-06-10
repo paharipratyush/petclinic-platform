@@ -15,8 +15,12 @@
 #   bash scripts/destroy.sh --env dev
 #   bash scripts/destroy.sh --env prod
 #
-# IMPORTANT: For prod, set TF_VAR_openai_api_key before running to avoid
-# the Secrets Manager secret version being overwritten with "demo".
+# Required environment variables (set before running):
+#   CLOUDFLARE_API_TOKEN        — Cloudflare API token (Zone:Read + DNS:Edit)
+#   TF_VAR_domain_name          — e.g. praty.dev (or set in terraform.tfvars)
+#   TF_VAR_openai_api_key       — any value (not used during destroy, but required by Terraform)
+#   TF_VAR_grafana_admin_password — any value (not used during destroy)
+#   TF_VAR_budget_alert_email   — any value (not used during destroy)
 
 set -euo pipefail
 
