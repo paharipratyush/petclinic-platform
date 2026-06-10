@@ -6,8 +6,10 @@
 #   2. Wait for the ALB to be deleted (prevents VPC subnet dependency violations)
 #   3. Run terraform destroy
 #
-# ECR repositories and Secrets Manager secrets are preserved by default so
-# images and credentials survive the destroy/rebuild cycle.
+# ECR repositories are destroyed (force_delete = true). Images must be rebuilt
+# after up.sh by pushing a commit to the app repo to trigger CI.
+# Secrets Manager secrets are force-deleted (recovery_window_in_days = 0) and
+# can be recreated immediately by terraform apply.
 #
 # Usage (from project root):
 #   bash scripts/destroy.sh --env dev
@@ -134,6 +136,59 @@ else
   [[ -n "$ALB_ARNS" ]] && sleep 30
 fi
 
+# ── Step 1.5: Drain Karpenter-provisioned nodes ────────────────────────────
+#
+# Karpenter launches EC2 instances outside the managed node group. If those
+# instances are still running when terraform destroy removes the VPC, the
+# subnet/ENI dependency causes destroy to fail with "DependencyViolation".
+# Deleting the NodePool tells Karpenter to cordon+drain and terminate its nodes
+# before we remove the cluster.
+
+echo ""
+echo "==> Step 1.5 — Draining Karpenter-provisioned nodes..."
+
+if $CLUSTER_REACHABLE; then
+  KARPENTER_CRD=$(kubectl get crd nodepools.karpenter.sh --ignore-not-found -o name 2>/dev/null || true)
+  if [[ -n "$KARPENTER_CRD" ]]; then
+    NODE_POOLS=$(kubectl get nodepool --ignore-not-found -o name 2>/dev/null || true)
+    if [[ -n "$NODE_POOLS" ]]; then
+      echo "  Deleting all Karpenter NodePools to drain provisioned nodes..."
+      kubectl delete nodepool --all --timeout=5m || true
+
+      echo "  Waiting up to 5 minutes for Karpenter nodes to terminate..."
+      for i in $(seq 1 30); do
+        KARPENTER_NODES=$(kubectl get node -l karpenter.sh/nodepool --ignore-not-found \
+          --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$KARPENTER_NODES" == "0" ]]; then
+          echo "  All Karpenter nodes terminated."
+          break
+        fi
+        echo "    $KARPENTER_NODES Karpenter node(s) still running... (${i}0s elapsed)"
+        sleep 10
+      done
+    else
+      echo "  No Karpenter NodePools found — skipping."
+    fi
+  else
+    echo "  Karpenter CRD not installed — skipping."
+  fi
+else
+  echo "  Cluster not reachable — checking for Karpenter-tagged EC2 instances via AWS CLI..."
+  KARPENTER_INSTANCES=$(aws ec2 describe-instances --region "$REGION" \
+    --filters "Name=tag:karpenter.sh/nodepool,Values=*" \
+              "Name=instance-state-name,Values=running,pending" \
+    --query 'Reservations[].Instances[].InstanceId' \
+    --output text 2>/dev/null || true)
+  if [[ -n "$KARPENTER_INSTANCES" ]]; then
+    echo "  Terminating Karpenter-launched instances: $KARPENTER_INSTANCES"
+    aws ec2 terminate-instances --region "$REGION" --instance-ids $KARPENTER_INSTANCES || true
+    echo "  Waiting 60s for instance termination..."
+    sleep 60
+  else
+    echo "  No running Karpenter instances found."
+  fi
+fi
+
 # ── Step 2: Terraform destroy ──────────────────────────────────────────────
 
 echo ""
@@ -144,14 +199,16 @@ echo ""
 echo "============================================================"
 echo "  petclinic-$ENV destroyed successfully."
 echo ""
-echo "  Preserved (cost-free, ready to re-use):"
-echo "    - ECR images in eu-central-1"
-echo "    - Secrets Manager secrets (rds-credentials, openai-api-key)"
-echo "    - SSM parameter /petclinic/$ENV/alb-dns-name"
-echo "    - Terraform state in S3"
-echo "    - Cloudflare DNS zone (the ACM validation CNAME and app CNAME"
-echo "      are removed by terraform destroy; the zone itself is not managed"
-echo "      by Terraform and persists at Cloudflare)"
+echo "  Preserved (not managed by this script):"
+echo "    - Terraform state in S3 (petclinic-terraform-state-*/)"
+echo "    - DynamoDB lock table (petclinic-terraform-locks)"
+echo "    - Cloudflare DNS zone (ACM validation + app CNAMEs removed;"
+echo "      the zone itself is not managed by Terraform)"
+echo ""
+echo "  Destroyed (must rebuild):"
+echo "    - ECR repos and all images — trigger CI after up.sh to repopulate"
+echo "    - Secrets Manager secrets — recreated automatically by terraform apply"
+echo "    - RDS data — no snapshot taken (skip_final_snapshot = true)"
 echo ""
 echo "  To rebuild: bash scripts/up.sh --env $ENV"
 echo "============================================================"
