@@ -99,8 +99,10 @@ kubectl apply -f "$REPO_ROOT/k8s/base/namespaces/namespaces.yaml"
 
 echo ""
 echo "==> Step 8 — Apply ExternalSecret manifests to $NAMESPACE..."
-kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/rds-credentials.yaml" -n "$NAMESPACE"
-kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/openai-api-key.yaml" -n "$NAMESPACE"
+sed "s/namespace: petclinic-dev/namespace: $NAMESPACE/g" \
+  "$REPO_ROOT/k8s/base/external-secrets/rds-credentials.yaml" | kubectl apply -f -
+sed "s/namespace: petclinic-dev/namespace: $NAMESPACE/g" \
+  "$REPO_ROOT/k8s/base/external-secrets/openai-api-key.yaml" | kubectl apply -f -
 
 echo ""
 echo "==> Step 9 — Verify K8s Secrets were created..."
