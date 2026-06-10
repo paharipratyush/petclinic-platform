@@ -1,5 +1,5 @@
 image:
-  name: springcommunity/spring-petclinic-genai-service
+  name: genai-service
   tag: "2cab3be"
 component: service
 service:

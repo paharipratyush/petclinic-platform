@@ -1,5 +1,5 @@
 image:
-  name: springcommunity/spring-petclinic-api-gateway
+  name: api-gateway
   tag: "3.4.1"
 
 component: gateway

@@ -1,5 +1,5 @@
 image:
-  name: springcommunity/spring-petclinic-discovery-server
+  name: discovery-server
   tag: "2cab3be"
 component: server
 service:
