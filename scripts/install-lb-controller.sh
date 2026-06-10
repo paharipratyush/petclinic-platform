@@ -126,7 +126,11 @@ fi
 
 echo ""
 echo "==> Step 8 — Store ALB DNS in SSM Parameter Store (for disaster recovery)..."
-aws ssm put-parameter \
+# MSYS_NO_PATHCONV=1 prevents Git Bash on Windows from converting the /petclinic/...
+# parameter path to a Windows path (e.g. C:\petclinic\...) before passing it to the
+# AWS CLI, which would cause a ValidationException "Parameter name must be a fully
+# qualified name". This env var is a no-op on Linux/macOS.
+MSYS_NO_PATHCONV=1 aws ssm put-parameter \
   --name "/petclinic/$ENV/alb-dns-name" \
   --value "$ALB_ADDRESS" \
   --type String \
