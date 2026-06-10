@@ -89,8 +89,9 @@ kubectl wait externalsecret/alertmanager-config -n monitoring \
   echo "  Ensure petclinic/alertmanager-smtp exists in Secrets Manager."
 }
 kubectl apply -f "$OBS_DIR/alertmanager.yaml"
-kubectl rollout status deployment/alertmanager -n monitoring --timeout=120s
-echo "  Alertmanager running."
+kubectl rollout status deployment/alertmanager -n monitoring --timeout=120s \
+  || echo "  WARNING: Alertmanager rollout timed out — SMTP secret may be missing or pod is slow to start. Continuing."
+echo "  Alertmanager deployed (check pod status with: kubectl get pods -n monitoring)"
 
 # ── Step 5: Deploy Loki ───────────────────────────────────────────────────────
 echo ""
