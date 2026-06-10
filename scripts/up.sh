@@ -87,7 +87,7 @@ kubectl get nodes
 echo ""
 echo "==> Step 3 — Installing ArgoCD..."
 kubectl apply -f "$REPO_ROOT/k8s/argocd/install/namespace.yaml"
-kubectl apply --server-side --force-conflicts -n argocd -f "$REPO_ROOT/k8s/argocd/install/install.yaml"
+kubectl apply --server-side --force-conflicts --validate=false -n argocd -f "$REPO_ROOT/k8s/argocd/install/install.yaml"
 
 echo "    Waiting for ArgoCD CRDs to be established..."
 kubectl wait --for=condition=Established \
