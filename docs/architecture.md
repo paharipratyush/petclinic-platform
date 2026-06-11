@@ -11,10 +11,11 @@ Architecture overview for the Spring Petclinic Microservices platform on AWS.
 1. [Overview](#overview)
 2. [AWS Infrastructure Diagram](#aws-infrastructure-diagram)
 3. [Service Topology](#service-topology)
-4. [Network Design](#network-design)
-5. [Environment Differences](#environment-differences)
-6. [Technology Decisions](#technology-decisions)
-7. [Monthly Cost Estimate](#monthly-cost-estimate)
+4. [GitOps Deployment Flow](#gitops-deployment-flow)
+5. [Network Design](#network-design)
+6. [Environment Differences](#environment-differences)
+7. [Technology Decisions](#technology-decisions)
+8. [Monthly Cost Estimate](#monthly-cost-estimate)
 
 ---
 
@@ -109,6 +110,18 @@ Internet
 Startup order (enforced by init containers):
   config-server → discovery-server → all other services
 
+Why this order matters:
+  config-server provides Spring Cloud Config — every service fetches its configuration
+  (database URLs, feature flags, logging levels) from config-server on startup. It MUST
+  be ready first or other services crash with "Connection refused."
+
+  discovery-server (Eureka) is the service registry — every service registers its hostname
+  and port with Eureka on startup. The api-gateway looks up services by name through
+  Eureka to route requests. Without Eureka, inter-service calls fail.
+
+  Init containers block pod readiness until these are available, so Kubernetes startup
+  order is enforced declaratively rather than relying on timing or retries.
+
 Database-backed services (RDS MySQL):
   customers-service, visits-service, vets-service
 
@@ -124,9 +137,74 @@ Metrics (Prometheus :9090 in monitoring namespace):
 
 ---
 
+## GitOps Deployment Flow
+
+This platform follows a strict GitOps model: **Git is the single source of truth**. ArgoCD continuously reconciles the cluster state to match what is in the platform repo. Nothing is deployed directly with `kubectl apply` or `helm install` in production.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Application Repo (spring-petclinic-microservices)               │
+│                                                                 │
+│  Developer pushes code to main branch                           │
+│         │                                                       │
+│         ▼                                                       │
+│  GitHub Actions: build-push.yml                                 │
+│  1. Build ARM64 Docker image (docker buildx for Graviton)       │
+│  2. Trivy scan — fail on CRITICAL CVEs                          │
+│  3. Push to ECR: {account}.dkr.ecr.eu-central-1.amazonaws.com/ │
+│     petclinic-{env}/{service}:{commit-sha}                      │
+│  4. Fire repository_dispatch → platform repo                    │
+└─────────────────────────────────────────────────────────────────┘
+         │
+         │  repository_dispatch (PLATFORM_REPO_TOKEN)
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Platform Repo (petclinic-platform) — this repo                  │
+│                                                                 │
+│  GitHub Actions: update-image-tags.yml                          │
+│  1. Receive dispatch with service name + commit SHA             │
+│  2. Update helm-values/{service}.yaml: image.tag: {sha}         │
+│  3. Commit and push to main branch                              │
+└─────────────────────────────────────────────────────────────────┘
+         │
+         │  ArgoCD polls Git every ~10 seconds
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ ArgoCD (running in EKS, argocd namespace)                       │
+│                                                                 │
+│  Detects Git change in helm-values/{service}.yaml               │
+│  Renders Helm chart: helm/petclinic-service/ +                  │
+│    helm-values/{service}.yaml + helm-values/{env}.yaml          │
+│  Compares rendered manifests to cluster state                   │
+│                                                                 │
+│  Dev:  auto-sync — applies immediately, prunes removed resources│
+│  Prod: manual sync — waits for human approval in ArgoCD UI/CLI  │
+└─────────────────────────────────────────────────────────────────┘
+         │
+         │  kubectl apply (server-side apply)
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ EKS (petclinic-dev / petclinic-prod namespace)                  │
+│                                                                 │
+│  Rolling update: new pods scheduled → readiness probe passes    │
+│  → old pods terminated (zero-downtime in prod with 2+ replicas) │
+│                                                                 │
+│  External Secrets Operator syncs AWS Secrets Manager →          │
+│  K8s Secrets before pods start                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Why this two-repo split?** The application team owns the source code repo; the platform team owns the infrastructure repo. Neither team needs write access to the other's repo during normal operations. CI/CD integrates them via `repository_dispatch` — a deliberate, auditable event. See [ADR-0008](adr/0008-argocd-gitops.md) for the full rationale.
+
+**Why commit SHA tags, never `latest`?** Every deployment is traceable to a specific Git commit. Rolling back is as simple as reverting the image tag commit in `helm-values/` and letting ArgoCD sync.
+
+---
+
 ## Network Design
 
 All resources are in **public subnets** (no NAT Gateway). Security groups are the access control perimeter.
+
+> **Cost optimization choice:** No NAT Gateway saves ~$32/month per environment. Resources are still protected by strict security groups (deny-by-default, only specific ports allowed from specific sources). This is appropriate for a learning project — for production workloads with stricter compliance requirements, private subnets + NAT would be the right choice. See [ADR-0001](adr/0001-public-subnets.md) for the full trade-off analysis.
 
 ```
 Security Group Matrix:

@@ -107,6 +107,38 @@ petclinic-platform/
 | dev | `petclinic-dev` | db.t4g.micro, single-AZ, no backup | 2× t4g.small | ArgoCD auto-sync |
 | prod | `petclinic-prod` | db.t4g.micro, single-AZ, 30-day backup, deletion_protection=true | 2× t4g.small | ArgoCD manual sync |
 
+## How It All Works
+
+This platform uses a **GitOps model** — Git is the single source of truth for what runs in the cluster.
+
+```
+Developer pushes code
+       │
+       ▼
+[App repo: build-push.yml]
+  Build ARM64 Docker images → Push to ECR → Fire repository_dispatch
+       │
+       ▼
+[Platform repo: update-image-tags.yml]
+  Commit new image tag to helm-values/{service}.yaml → Push to Git
+       │
+       ▼
+[ArgoCD] (running inside EKS)
+  Detects Git change → Reconciles Helm release → Rolling pod update
+       │
+       ▼
+[EKS] New pods running the new image
+  Prometheus scrapes metrics → Grafana dashboards update
+  FluentBit ships logs → Loki for querying
+  Zipkin collects distributed traces
+```
+
+**Why two repos?** The application repo (Spring Petclinic source code) is separate from the platform repo (infrastructure + Helm values). This lets the platform team manage infrastructure without touching application code, and CI in the app repo triggers the platform repo via `repository_dispatch`. See [ADR-0008](docs/adr/0008-argocd-gitops.md) for the full rationale.
+
+**First deploy:** The cluster starts empty (no images in ECR). After `up.sh` finishes, you trigger a manual GitHub Actions run with `force_rebuild_all=true` to build and push all 8 service images for the first time. ArgoCD then syncs automatically in dev. See [docs/architecture.md](docs/architecture.md) for full component details.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -116,6 +148,8 @@ petclinic-platform/
 - A domain managed via [Cloudflare DNS](https://cloudflare.com) (free account works)
 - An [OpenAI API key](https://platform.openai.com) (for the GenAI service)
 
+> **Estimated cost:** ~$80/month if both dev + prod are left running continuously (EKS control plane + t4g.small nodes + RDS). To minimize cost, run `bash scripts/destroy.sh --env dev` when you are done exploring. See [docs/architecture.md § Monthly Cost Estimate](docs/architecture.md#monthly-cost-estimate) for a line-item breakdown.
+
 ### 1 — Fork both repos
 
 ```
@@ -123,11 +157,13 @@ petclinic-platform/
    → your fork will be:   https://github.com/<YOUR_USERNAME>/petclinic-platform
 
 2. Fork the application repo: https://github.com/paharipratyush/spring-petclinic-microservices
-   (This fork already has build-push.yml pre-configured for this platform)
+   (This fork already has build-push.yml pre-configured to build ARM64 images and push to ECR)
    → edit .github/workflows/build-push.yml line 247:
      Change: repository: paharipratyush/petclinic-platform
      To:     repository: <YOUR_USERNAME>/petclinic-platform
 ```
+
+> **Why edit line 247?** After building images, `build-push.yml` fires a `repository_dispatch` event to the platform repo's `update-image-tags.yml`. Line 247 is the `repository:` field that controls which platform repo receives that event. Without this edit, new image tags are pushed to ECR but ArgoCD never learns about them.
 
 ### 2 — Set environment variables
 

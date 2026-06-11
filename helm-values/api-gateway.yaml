@@ -1,3 +1,11 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# helm-values/api-gateway.yaml — Per-service values for api-gateway
+# ─────────────────────────────────────────────────────────────────────────────
+# These are the prod-sensible defaults (2 replicas, HPA, PDB).
+# helm-values/dev.yaml overrides replicaCount → 1 and disables HPA/PDB for dev.
+# The full image ref rendered by Helm is:
+#   {image.registry from dev.yaml or prod.yaml}/{image.name}:{image.tag}
+# image.tag is updated automatically by .github/workflows/update-image-tags.yml on each CI push.
 image:
   name: api-gateway
   tag: "a3501df"

@@ -125,16 +125,36 @@ cp terraform/environments/dev/terraform.tfvars.example terraform/environments/de
 bash scripts/up.sh --env dev
 ```
 
+### What `up.sh` Does (Behind the Scenes)
+
+`up.sh` is the master bootstrap script. Understanding what it does helps you diagnose failures and know what state the cluster is in at each stage:
+
+1. **Terraform apply** (~15 min) — Creates VPC, EKS cluster, RDS database, ECR repos, IAM roles, Karpenter SQS queue, Cloudflare DNS records, ACM certificate.
+2. **ECR registry update** — Reads `terraform output ecr_registry_url` and updates `helm-values/dev.yaml` with your account-specific ECR URL, then commits and pushes to Git.
+3. **kubectl config** — Runs `aws eks update-kubeconfig` so subsequent `kubectl` commands hit the new cluster.
+4. **ArgoCD install** — Applies the ArgoCD manifest to the `argocd` namespace and waits for all deployments to be `Available`. This is the GitOps controller that manages all your apps.
+5. **Karpenter install** — Helm-installs Karpenter (node autoscaler) and applies the `NodePool` + `EC2NodeClass` CRDs. Also installs `metrics-server` (needed for HPA).
+6. **External Secrets Operator install** — Helm-installs ESO with your IRSA role ARN. ESO syncs AWS Secrets Manager secrets → K8s Secrets. Services will not start until ESO is running.
+7. **ArgoCD Application CRDs** — Applies the 8 ArgoCD Application manifests for the env. ArgoCD starts watching `helm-values/` for each service. (Images are not in ECR yet — pods will be in `ImagePullBackOff` until you run step 6 of the Quick Start.)
+8. **ALB Controller + Ingress** — Installs the AWS Load Balancer Controller and creates the Ingress resource. The ALB is provisioned and a CNAME is created in Cloudflare pointing `petclinic-{env}.yourdomain.com` → ALB.
+9. **Observability stack** — Applies Prometheus, Grafana, Loki, FluentBit, Zipkin, and Alertmanager manifests to the `monitoring` and `tracing` namespaces.
+
+**If `up.sh` fails partway through:** The script is idempotent — most steps check whether resources already exist before creating them. You can re-run `bash scripts/up.sh --env dev` safely. If Terraform fails, check `terraform/environments/dev/` for partial state or run `terraform plan` manually to see what's missing.
+
+---
+
 ### GitHub Secrets setup (app repo fork)
 
-After `terraform apply` succeeds, set these secrets in your **microservices fork** on GitHub:
+After `terraform apply` succeeds, set these secrets in your **microservices fork** on GitHub (Settings → Secrets and variables → Actions → New repository secret):
 
-| Secret | Value |
-|--------|-------|
-| `AWS_ROLE_ARN` | output from `terraform output github_actions_role_arn` |
-| `AWS_REGION` | `eu-central-1` |
-| `ECR_REGISTRY` | output from `terraform output ecr_registry` |
-| `PLATFORM_REPO_TOKEN` | GitHub PAT (repo scope) for dispatching to your platform repo fork |
+| Secret | How to get the value | Why it's needed |
+|--------|----------------------|-----------------|
+| `AWS_ROLE_ARN` | `terraform -chdir=terraform/environments/dev output github_actions_role_arn` | GitHub Actions assumes this IAM role via OIDC federation — no static AWS keys needed. The role has ECR push permissions. |
+| `AWS_REGION` | `eu-central-1` | Tells the AWS CLI and Docker which region's ECR to authenticate against. |
+| `ECR_REGISTRY` | `terraform -chdir=terraform/environments/dev output ecr_registry_url` | The account-specific ECR base URL used to tag and push images (e.g., `123456789.dkr.ecr.eu-central-1.amazonaws.com`). |
+| `PLATFORM_REPO_TOKEN` | Create a GitHub PAT: Settings → Developer settings → Personal access tokens → `repo` scope | After pushing images to ECR, `build-push.yml` fires `repository_dispatch` to the platform repo's `update-image-tags.yml`. This PAT authenticates that cross-repo call. |
+
+> **About OIDC vs static keys:** The `AWS_ROLE_ARN` secret enables [GitHub OIDC federation](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect) — GitHub Actions exchanges a short-lived OIDC token for temporary AWS credentials. No long-lived AWS keys are stored in GitHub. See [ADR-0005](../adr/0005-github-actions-oidc.md) for the rationale.
 
 ---
 
@@ -328,6 +348,88 @@ git log --oneline helm-values/api-gateway.yaml
 # ArgoCD syncs the new tag; verify the pod image
 kubectl get pod -n petclinic-dev -l app.kubernetes.io/name=api-gateway \
   -o jsonpath='{.items[0].spec.containers[0].image}'
+```
+
+---
+
+## Troubleshooting
+
+### `terraform apply` fails with `AccessDenied`
+
+Your AWS identity lacks required permissions. Verify which identity is being used:
+
+```bash
+aws sts get-caller-identity
+```
+
+The caller needs permissions to create EKS clusters, RDS instances, VPCs, IAM roles, and Secrets Manager secrets. If using an IAM user, attach `AdministratorAccess` for initial setup (scope down after).
+
+### Pods are in `ImagePullBackOff`
+
+ECR repositories are empty after a fresh install. Trigger a full image build:
+
+```
+App repo fork → GitHub Actions → "CI - Build and Push" → Run workflow → force_rebuild_all=true
+```
+
+Wait ~10 minutes for ARM64 builds to complete and push to ECR. ArgoCD in dev will auto-sync within ~10 seconds of images being available.
+
+### `up.sh` fails on the ArgoCD step
+
+Check whether ArgoCD pods are pending due to insufficient capacity:
+
+```bash
+kubectl get pods -n argocd
+kubectl describe pod -n argocd <pending-pod>  # look for "Insufficient cpu/memory"
+```
+
+If nodes haven't joined yet, wait ~2 minutes and retry. If the node group is stuck, check EC2 Auto Scaling in the AWS console.
+
+### Services are `OutOfSync` in ArgoCD
+
+This usually means the Helm values on disk differ from what ArgoCD last applied. Check the diff and sync:
+
+```bash
+# Via port-forward
+kubectl port-forward svc/argocd-server -n argocd 8443:443 &
+argocd login localhost:8443 --insecure
+
+argocd app diff api-gateway-dev      # show what would change
+argocd app sync api-gateway-dev      # apply the change
+```
+
+### Config-server or discovery-server pods are `CrashLoopBackOff`
+
+These services do not use RDS, so it is not a database issue. Check:
+
+```bash
+kubectl logs -n petclinic-dev deployment/config-server
+```
+
+Common causes: ECR image not yet available (run CI first), or Secrets Manager secret not yet created (run `terraform apply` first).
+
+### ExternalSecret shows `SecretSyncedError`
+
+ESO cannot read from Secrets Manager. Check the IRSA role trust policy and ESO's service account annotation:
+
+```bash
+kubectl describe externalsecret -n petclinic-dev
+kubectl get sa external-secrets -n external-secrets -o yaml | grep amazonaws
+```
+
+The ESO service account must have `eks.amazonaws.com/role-arn` pointing to the `petclinic-dev-eso-role`. Re-run `bash scripts/install-eso.sh dev` if the annotation is missing.
+
+### `smoke-test.sh` fails with `Connection refused`
+
+The ALB may not have propagated yet (DNS TTL + ALB provisioning takes ~3-5 minutes after `up.sh` completes). Wait and retry:
+
+```bash
+# Check ALB state
+kubectl get ingress -n petclinic-dev
+# "ADDRESS" column should show an ALB DNS name like xxx.eu-central-1.elb.amazonaws.com
+
+# Check Cloudflare CNAME
+curl -s "https://dns.google/resolve?name=petclinic-dev.yourdomain.com&type=CNAME" | jq .
 ```
 
 ---
