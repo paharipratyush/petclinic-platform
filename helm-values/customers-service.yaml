@@ -19,7 +19,7 @@ config:
   CONFIG_SERVER_URL: "http://config-server:8888"
   DISCOVERY_SERVER_URL: "http://discovery-server:8761/eureka"
   # up.sh replaces PENDING_DEV_RDS_ENDPOINT with the actual RDS hostname after terraform apply
-  SPRING_DATASOURCE_URL: "jdbc:mysql://PENDING_DEV_RDS_ENDPOINT:3306/petclinic"
+  SPRING_DATASOURCE_URL: "jdbc:mysql://petclinic-dev-mysql.c1qcu40i4ohf.eu-central-1.rds.amazonaws.com:3306/petclinic"
 initContainers:
   - name: wait-for-config-server
     image: busybox:1.36
