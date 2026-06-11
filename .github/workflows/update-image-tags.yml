@@ -5,7 +5,7 @@ on:
     types: [app-image-built]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: update-image-tags
@@ -44,6 +44,8 @@ jobs:
     name: Update helm-values and commit
     needs: validate
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout platform repo
         uses: actions/checkout@v4
