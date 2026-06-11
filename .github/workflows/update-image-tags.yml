@@ -105,5 +105,6 @@ jobs:
             echo "No helm-values changes to commit"
           else
             git commit -m "ci: update image tags to ${SHA} (${SERVICES})"
+            git pull --rebase
             git push
           fi

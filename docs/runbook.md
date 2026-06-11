@@ -24,6 +24,7 @@
 17. [Terraform: Plan and Apply Workflow](#terraform-plan-and-apply-workflow)
 18. [Terraform: State Management Operations](#terraform-state-management-operations)
 19. [Infrastructure: Full Destroy and Rebuild Procedure](#infrastructure-full-destroy-and-rebuild-procedure)
+20. [Known Issues and Workarounds](#known-issues-and-workarounds)
 
 ---
 
@@ -1424,6 +1425,38 @@ aws rds delete-db-snapshot \
   --region eu-central-1
 # Wait ~30 seconds, then re-run terraform destroy
 ```
+
+---
+
+### KI-006: Evicted Pods With `ContainerStatusUnknown`
+
+**Symptom:** `kubectl get pods -n petclinic-dev` shows one or more pods with status `ContainerStatusUnknown` or `Evicted` and `0/1` READY. Example:
+```
+api-gateway-599795f449-xkpdb  0/1  ContainerStatusUnknown
+```
+
+**Root cause:** Kubernetes evicts pods when a node runs low on memory. The evicted pod record is kept until manually deleted; it does not affect the live pod (the ReplicaSet immediately schedules a replacement).
+
+**Impact:** None — the live replacement pod is already `1/1 Running`. Evicted pods are inert and do not consume resources.
+
+**Fix:** Delete all evicted pods:
+```bash
+# Delete all Evicted pods in a namespace
+kubectl get pods -n petclinic-dev --field-selector=status.phase=Failed \
+  -o json | jq -r '.items[] | select(.status.reason=="Evicted") | .metadata.name' \
+  | xargs -r kubectl delete pod -n petclinic-dev
+
+# Or delete all Failed pods cluster-wide (safe — only removes terminal pods)
+kubectl delete pods --all-namespaces --field-selector=status.phase=Failed
+```
+
+**Verify:**
+```bash
+kubectl get pods -n petclinic-dev --no-headers | grep -v Running
+# Should return empty (or only Init/Pending pods during a rollout)
+```
+
+**Prevention:** The `t4g.small` node has 2 GiB RAM. `api-gateway` can use up to 412 MiB at peak. With 8 services per node, memory pressure is expected on heavily loaded nodes. Karpenter scales out automatically when pressure is sustained — the eviction is a one-time event during a spike.
 
 ---
 

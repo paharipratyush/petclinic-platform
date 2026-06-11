@@ -451,25 +451,66 @@ To add a new receiver or routing rule, edit the `alertmanager-config` Secret in 
 
 ## Enabling Email Alerts
 
-The Alertmanager config uses a placeholder SMTP password. To enable real email alerts:
+Alertmanager email credentials are provisioned via ESO from AWS Secrets Manager — no env vars or hardcoded passwords needed. `install-observability.sh` applies the ExternalSecret; ESO syncs the secret automatically.
 
 ```bash
 # 1. Generate a Gmail App Password at https://myaccount.google.com/apppasswords
 
-# 2. Store it in Secrets Manager (optional but recommended)
+# 2. Store credentials in Secrets Manager BEFORE running the install script
 aws secretsmanager create-secret \
   --name petclinic/alertmanager-smtp \
-  --secret-string '{"password":"<your-app-password>"}' \
+  --secret-string '{"email":"you@gmail.com","password":"<your-app-password>"}' \
   --region eu-central-1
 
-# 3. Run the install script with the password
-export SMTP_PASSWORD=$(aws secretsmanager get-secret-value \
-  --secret-id petclinic/alertmanager-smtp \
-  --query SecretString --output text | jq -r .password)
+# 3. Run the install script — ESO provisions the K8s secret automatically
 bash scripts/install-observability.sh --env dev
 
-# 4. Verify the secret was patched
+# 4. Verify ESO synced the secret
+kubectl get externalsecret alertmanager-config -n monitoring
+# READY column should show "SecretSynced"
+
+# 5. Verify Alertmanager loaded the credentials
 kubectl -n monitoring get secret alertmanager-config -o jsonpath='{.data.alertmanager\.yml}' \
   | base64 -d | grep smtp_auth_password
-# Should NOT show "REPLACE_WITH_GMAIL_APP_PASSWORD"
+# Should show your actual password hash, not a placeholder
+
+# To force an immediate ESO refresh (default interval is 1h):
+kubectl annotate externalsecret alertmanager-config -n monitoring \
+  force-sync=$(date +%s) --overwrite
 ```
+
+> **If the secret already exists** and you need to update it:
+> ```bash
+> aws secretsmanager put-secret-value \
+>   --secret-id petclinic/alertmanager-smtp \
+>   --secret-string '{"email":"you@gmail.com","password":"<new-password>"}' \
+>   --region eu-central-1
+> # Force ESO sync to pick up the change immediately:
+> kubectl annotate externalsecret alertmanager-config -n monitoring \
+>   force-sync=$(date +%s) --overwrite
+> ```
+
+## Adding Prod Scrape Targets to Prometheus
+
+The base `k8s/base/observability/prometheus.yaml` only includes **dev** scrape targets. This is intentional — prod targets would trigger `ServiceDown` alerts when prod is not running.
+
+When prod is provisioned, run the install script with `--env prod` to append prod jobs to the live ConfigMap:
+
+```bash
+bash scripts/install-observability.sh --env prod
+```
+
+This patches the `prometheus-config` ConfigMap to add 5 prod scrape jobs (`api-gateway-prod`, `customers-service-prod`, `visits-service-prod`, `vets-service-prod`, `genai-service-prod`). Prometheus hot-reloads within 15 seconds.
+
+To verify:
+```bash
+# Check the live config
+kubectl get configmap prometheus-config -n monitoring \
+  -o jsonpath='{.data.prometheus\.yml}' | grep job_name
+
+# Check Prometheus targets
+kubectl port-forward svc/prometheus -n monitoring 9090:9090
+# http://localhost:9090/targets — should show 10 targets (5 dev + 5 prod)
+```
+
+> **When prod is destroyed:** The prod scrape targets remain in the ConfigMap but will fire `ServiceDown` alerts after 1 minute. Either: (a) delete and re-apply the base `prometheus.yaml` to reset to dev-only targets, or (b) silence the prod alerts in Alertmanager until prod is next provisioned.
