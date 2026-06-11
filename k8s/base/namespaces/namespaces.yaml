@@ -3,6 +3,7 @@ kind: Namespace
 metadata:
   name: petclinic-dev
   labels:
+    app.kubernetes.io/name: petclinic-dev
     app.kubernetes.io/part-of: petclinic
     app.kubernetes.io/managed-by: kubectl
     environment: dev
@@ -14,6 +15,7 @@ kind: Namespace
 metadata:
   name: petclinic-prod
   labels:
+    app.kubernetes.io/name: petclinic-prod
     app.kubernetes.io/part-of: petclinic
     app.kubernetes.io/managed-by: kubectl
     environment: prod

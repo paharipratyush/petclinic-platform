@@ -158,7 +158,7 @@ terraform apply plan.out
 # 2. Trigger full CI rebuild to push all images
 # Go to the APPLICATION REPO FORK → GitHub Actions → build-push.yml → Run workflow
 # OR manually rebuild and push using the platform repo script:
-REGISTRY=533267262133.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod
+REGISTRY=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod
 bash scripts/ecr-login.sh prod
 bash scripts/build-push.sh prod all
 
@@ -286,17 +286,17 @@ export TF_VAR_budget_alert_email="you@example.com"
 bash scripts/up.sh --env {env}
 ```
 
-What this runs in order:
-- **Step 0** — Creates S3 state bucket + DynamoDB lock table (idempotent)
-- **Step 1** — `terraform apply`: VPC, EKS, RDS, ECR, IAM, Cloudflare DNS, ACM cert
-- **Step 1a/1b** — Updates ECR registry URL and RDS endpoint in `helm-values/`
-- **Step 2** — `aws eks update-kubeconfig`
-- **Step 3** — ArgoCD install
-- **Step 3.5** — Karpenter + metrics-server + NodePool
-- **Step 4** — External Secrets Operator
-- **Step 5** — ArgoCD Application CRDs + RBAC
-- **Step 6** — AWS LB Controller + Ingress
-- **Step 7** — Observability stack (Prometheus, Grafana, Loki, FluentBit, Zipkin, Alertmanager)
+What `up.sh` runs internally (you do NOT run these manually):
+- **Phase 0** — Creates S3 state bucket + DynamoDB lock table (idempotent)
+- **Phase 1** — `terraform apply`: VPC, EKS, RDS, ECR, IAM, Cloudflare DNS, ACM cert
+- **Phase 1a/1b** — Updates ECR registry URL and RDS endpoint in `helm-values/`
+- **Phase 2** — `aws eks update-kubeconfig`
+- **Phase 3** — ArgoCD install
+- **Phase 3.5** — Karpenter + metrics-server + NodePool
+- **Phase 4** — External Secrets Operator
+- **Phase 5** — ArgoCD Application CRDs + RBAC
+- **Phase 6** — AWS LB Controller + Ingress
+- **Phase 7** — Observability stack (Prometheus, Grafana, Loki, FluentBit, Zipkin, Alertmanager)
 
 ### Step 2: Repopulate ECR (first deploy only)
 

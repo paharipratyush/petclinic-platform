@@ -1,6 +1,6 @@
 # Technical Specification — Petclinic Platform
 
-**Last Updated:** 2026-06-08
+**Last Updated:** 2026-06-11
 
 > **Purpose:** Single source of truth for all infrastructure values. Jira stories reference sections of this document via anchor links. Read the relevant section before implementing any story.
 >

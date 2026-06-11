@@ -5,6 +5,7 @@ metadata:
   name: petclinic-quota
   namespace: petclinic-dev
   labels:
+    app.kubernetes.io/name: petclinic-quota
     app.kubernetes.io/part-of: petclinic
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: namespace
@@ -22,6 +23,7 @@ metadata:
   name: petclinic-limits
   namespace: petclinic-dev
   labels:
+    app.kubernetes.io/name: petclinic-limits
     app.kubernetes.io/part-of: petclinic
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: namespace
@@ -47,6 +49,7 @@ metadata:
   name: petclinic-quota
   namespace: petclinic-prod
   labels:
+    app.kubernetes.io/name: petclinic-quota
     app.kubernetes.io/part-of: petclinic
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: namespace
@@ -64,6 +67,7 @@ metadata:
   name: petclinic-limits
   namespace: petclinic-prod
   labels:
+    app.kubernetes.io/name: petclinic-limits
     app.kubernetes.io/part-of: petclinic
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: namespace

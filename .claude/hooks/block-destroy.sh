@@ -35,7 +35,7 @@ if echo "$COMMAND" | grep -qE '(terraform|terragrunt)\s+destroy'; then
 fi
 
 # Also catch 'terraform apply -destroy' (alternative destroy syntax)
-if echo "$COMMAND" | grep -qE '(terraform|terragrunt)\s+apply\s+.*-destroy'; then
+if echo "$COMMAND" | grep -qE '(terraform|terragrunt)\s+apply\s+.*(--|-){1}destroy'; then
   echo "BLOCKED: 'terraform apply -destroy' is equivalent to 'terraform destroy'."
   echo ""
   echo "This syntax destroys all resources. Use your terminal directly if intentional."
