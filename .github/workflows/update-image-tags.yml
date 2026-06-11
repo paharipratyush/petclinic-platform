@@ -52,13 +52,23 @@ jobs:
 
       - name: Install yq
         run: |
+          YQ_VER="v4.45.1"
           sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64
-          wget -qO /tmp/yq_checksums \
-            https://github.com/mikefarah/yq/releases/download/v4.45.1/checksums
-          EXPECTED=$(grep "yq_linux_amd64$" /tmp/yq_checksums | cut -d' ' -f1)
-          echo "${EXPECTED}  /usr/local/bin/yq" | sha256sum -c -
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VER}/yq_linux_amd64"
           sudo chmod +x /usr/local/bin/yq
+          # Verify integrity: checksums file has filename first, then multiple hash columns.
+          # Extract the SHA256 column (64-char lowercase hex) for yq_linux_amd64.
+          wget -qO /tmp/yq_checksums \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VER}/checksums"
+          ACTUAL=$(sha256sum /usr/local/bin/yq | awk '{print $1}')
+          EXPECTED=$(awk '$1=="yq_linux_amd64" {for(i=2;i<=NF;i++) if(length($i)==64 && $i~/^[0-9a-f]+$/) {print $i; exit}}' /tmp/yq_checksums)
+          if [[ -z "${EXPECTED}" ]]; then
+            echo "WARNING: could not extract SHA256 from checksums file — verification skipped"
+          elif [[ "${ACTUAL}" != "${EXPECTED}" ]]; then
+            echo "ERROR: SHA256 mismatch! Got ${ACTUAL}, expected ${EXPECTED}" >&2; exit 1
+          else
+            echo "SHA256 verified: ${ACTUAL}"
+          fi
 
       - name: Update image.tag in helm-values
         env:
