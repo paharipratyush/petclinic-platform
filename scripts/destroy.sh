@@ -291,7 +291,7 @@ echo "==> Step 2 — Running terraform destroy..."
 # Ensure backend.tf has the real account ID (replaces YOUR_ACCOUNT_ID placeholder at runtime)
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
 if [[ -n "$ACCOUNT_ID" ]]; then
-  sed -i "s|petclinic-terraform-state-YOUR_ACCOUNT_ID|petclinic-terraform-state-${ACCOUNT_ID}|g" \
+  sed -i "s|bucket.*=.*\"petclinic-terraform-state-[^\"]*\"|bucket         = \"petclinic-terraform-state-${ACCOUNT_ID}\"|g" \
     "$TF_DIR/backend.tf" 2>/dev/null || true
 fi
 
@@ -598,6 +598,32 @@ except: print(0)
   else
     echo "  State bucket not found — already cleaned up."
   fi
+fi
+
+# ── Reset helm-values/{env}.yaml ECR registry to placeholder ─────────────
+# Must happen after every destroy so the next up.sh can substitute any
+# deployer's account ID (sed in up.sh matches the placeholder, not a real ID).
+echo ""
+echo "==> Resetting account-specific placeholders in git..."
+HV_ENV_FILE="$REPO_ROOT/helm-values/$ENV.yaml"
+if [[ -f "$HV_ENV_FILE" ]]; then
+  sed -i "s|registry:.*|registry: \"YOUR_ACCOUNT_ID.dkr.ecr.eu-central-1.amazonaws.com/petclinic-${ENV}\"|" \
+    "$HV_ENV_FILE" 2>/dev/null || true
+fi
+
+# Stage backend.tf (if reset above) + helm-values/{env}.yaml, then commit+push.
+git -C "$REPO_ROOT" add \
+  "terraform/environments/dev/backend.tf" \
+  "terraform/environments/prod/backend.tf" \
+  "helm-values/$ENV.yaml" 2>/dev/null || true
+if ! git -C "$REPO_ROOT" diff --cached --quiet 2>/dev/null; then
+  git -C "$REPO_ROOT" commit \
+    -m "chore($ENV): reset account-specific placeholders after destroy"
+  git -C "$REPO_ROOT" push origin main \
+    || echo "  WARNING: git push failed — push placeholder resets manually before next up.sh"
+  echo "  Placeholder resets committed and pushed."
+else
+  echo "  Placeholders already at default — no git commit needed."
 fi
 
 echo ""
