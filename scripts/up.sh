@@ -92,7 +92,11 @@ CLUSTER_NAME=$(tf -chdir="$TF_DIR" output -raw cluster_name)
 # with the real URL from terraform output so any fork works without manual edits.
 echo ""
 echo "==> Step 1a — Updating ECR registry URL in helm-values/$ENV.yaml..."
+# ecr_registry_url is the base registry (account.dkr.ecr.region.amazonaws.com).
+# The Helm image template renders: {registry}/{name}:{tag}, so registry must include
+# the per-environment path prefix (petclinic-dev / petclinic-prod).
 ECR_REGISTRY=$(tf -chdir="$TF_DIR" output -raw ecr_registry_url 2>/dev/null || echo "")
+[[ -n "$ECR_REGISTRY" ]] && ECR_REGISTRY="${ECR_REGISTRY}/petclinic-${ENV}"
 if [[ -n "$ECR_REGISTRY" ]]; then
   HV_ENV_FILE="$REPO_ROOT/helm-values/$ENV.yaml"
   CURRENT_REGISTRY=$(grep -m1 "registry:" "$HV_ENV_FILE" | sed "s/.*registry: *['\"]//;s/['\"].*//" | tr -d ' ')
