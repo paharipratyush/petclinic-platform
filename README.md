@@ -204,10 +204,13 @@ bash scripts/up.sh --env dev
 
 ### 6 — Populate ECR (first deploy only)
 
-After `up.sh` finishes, trigger a full image build in GitHub Actions:
+**The app will show 503 until this step completes.** ECR repos are created empty by Terraform — ArgoCD has already synced and scheduled pods, but they are in `ImagePullBackOff` until images exist. `up.sh` detects this and prints numbered next-steps at the end, including a fallback if the cross-repo `repository_dispatch` doesn't fire automatically.
+
+Trigger a full image build in your app-repo fork on GitHub Actions:
 ```
 GitHub Actions → CI - Build and Push → Run workflow → force_rebuild_all=true
 ```
+Wait ~10 min for ARM64 builds. ArgoCD auto-syncs dev within ~3 min of the tag commit.
 
 ### 7 — Run smoke test
 
