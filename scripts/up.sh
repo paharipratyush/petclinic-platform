@@ -80,6 +80,13 @@ for _stale in "$TF_DIR/errored.tfstate" "$TF_DIR/destroy.plan" "$TF_DIR/plan.out
   [[ -f "$_stale" ]] && { echo "  Removing stale $(basename "$_stale")..."; rm -f "$_stale"; }
 done
 
+# Ensure backend.tf has the real account ID (replaces YOUR_ACCOUNT_ID placeholder at runtime)
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
+if [[ -n "$ACCOUNT_ID" ]]; then
+  sed -i "s|petclinic-terraform-state-YOUR_ACCOUNT_ID|petclinic-terraform-state-${ACCOUNT_ID}|g" \
+    "$TF_DIR/backend.tf" 2>/dev/null || true
+fi
+
 tf -chdir="$TF_DIR" init -upgrade
 tf -chdir="$TF_DIR" plan -out /tmp/petclinic-$ENV.plan
 tf -chdir="$TF_DIR" apply /tmp/petclinic-$ENV.plan

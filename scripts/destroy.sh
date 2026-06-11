@@ -286,6 +286,20 @@ fi
 echo ""
 echo "==> Step 2 — Running terraform destroy..."
 
+# Ensure backend.tf has the real account ID (replaces YOUR_ACCOUNT_ID placeholder at runtime)
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
+if [[ -n "$ACCOUNT_ID" ]]; then
+  sed -i "s|petclinic-terraform-state-YOUR_ACCOUNT_ID|petclinic-terraform-state-${ACCOUNT_ID}|g" \
+    "$TF_DIR/backend.tf" 2>/dev/null || true
+fi
+
+# Re-initialize if backend config changed (idempotent — safe to run even if already initialized)
+if ! tf -chdir="$TF_DIR" output -raw vpc_id >/dev/null 2>&1; then
+  echo "  Backend reinit required — running terraform init -reconfigure..."
+  tf -chdir="$TF_DIR" init -reconfigure -input=false 2>&1 \
+    || { echo "ERROR: terraform init failed. Check backend.tf and AWS credentials."; exit 1; }
+fi
+
 VPC_ID=$(tf -chdir="$TF_DIR" output -raw vpc_id 2>/dev/null || echo "")
 [[ -n "$VPC_ID" ]] && echo "  VPC ID: $VPC_ID (saved for auto-remediation if needed)"
 
