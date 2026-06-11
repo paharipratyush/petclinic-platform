@@ -12,6 +12,7 @@
 #
 # What this script does (in order):
 #   1.   terraform apply — provisions EKS, RDS, VPC, ECR, ACM, Cloudflare DNS records
+#   1a.  Auto-update ECR registry URL in helm-values/{env}.yaml (account-specific, env-prefixed)
 #   1b.  Auto-update RDS endpoint in helm-values/ if it changed (happens on every rebuild)
 #   2.   aws eks update-kubeconfig — configures kubectl
 #   3.   Install ArgoCD — GitOps controller
@@ -19,7 +20,7 @@
 #   4.   Install External Secrets Operator — syncs RDS + OpenAI secrets before ArgoCD
 #   5.   Apply ArgoCD Application CRDs + RBAC — registers all 16 apps (secrets ready)
 #   6.   Install AWS LB Controller + Ingress — provisions ALB, updates DNS
-#   7.   Install Observability stack
+#   7.   Install Observability stack (Prometheus, Grafana, Loki, FluentBit, Zipkin, Alertmanager)
 #
 # Usage (from project root):
 #   bash scripts/up.sh --env dev
