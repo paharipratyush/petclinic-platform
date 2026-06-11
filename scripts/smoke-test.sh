@@ -23,8 +23,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-ok()   { echo -e "  ${GREEN}✓${NC} $*"; ((PASS++)); }
-fail() { echo -e "  ${RED}✗${NC} $*"; ((FAIL++)); }
+ok()   { echo -e "  ${GREEN}✓${NC} $*"; PASS=$((PASS + 1)); }
+fail() { echo -e "  ${RED}✗${NC} $*"; FAIL=$((FAIL + 1)); }
 info() { echo -e "  ${YELLOW}→${NC} $*"; }
 
 check_pod_running() {
@@ -80,7 +80,7 @@ eureka_apps=$(kubectl run -n "$NS" smoke-eureka --rm -it \
   curl -sf "http://discovery-server.${NS}:8761/eureka/apps" 2>/dev/null || true)
 for svc in API-GATEWAY CUSTOMERS-SERVICE VISITS-SERVICE VETS-SERVICE \
            GENAI-SERVICE ADMIN-SERVER; do
-  if echo "$eureka_apps" | grep -qi "<app><name>${svc}</name>"; then
+  if echo "$eureka_apps" | grep -qi "<name>${svc}</name>"; then
     ok "Eureka: ${svc} registered"
   else
     fail "Eureka: ${svc} not found in registry"
@@ -100,10 +100,12 @@ check_http "api-gateway /api/vet/vets" \
 # ── 5. RDS connectivity — health + create/read write test ────────────────
 echo ""
 echo "[ 5/6 ] RDS connectivity"
+declare -A SVC_PORT=([customers-service]=8081 [visits-service]=8082 [vets-service]=8083)
 for svc in customers-service visits-service vets-service; do
+  port="${SVC_PORT[$svc]}"
   if kubectl run -n "$NS" smoke-db-"$svc" --rm -it \
       --image=curlimages/curl:8.6.0 --restart=Never --quiet -- \
-      curl -sf --max-time 10 "http://${svc}.${NS}:808$(echo "$svc" | grep -o '[0-9]' | head -1)/actuator/health" \
+      curl -sf --max-time 10 "http://${svc}.${NS}:${port}/actuator/health" \
       > /dev/null 2>&1; then
     ok "DB-backed service healthy: ${svc}"
   else
@@ -118,7 +120,7 @@ CREATE_RESPONSE=$(kubectl run -n "$NS" smoke-db-write --rm -it \
   curl -sf --max-time 15 -X POST \
     -H "Content-Type: application/json" \
     -d '{"firstName":"SmokeTest","lastName":"User","address":"1 Test St","city":"TestCity","telephone":"0123456789"}' \
-    "http://customers-service.${NS}:8081/api/customer/owners" \
+    "http://customers-service.${NS}:8081/owners" \
   2>/dev/null || echo "")
 if echo "$CREATE_RESPONSE" | grep -q '"id"'; then
   ok "RDS write: create owner succeeded"
@@ -126,7 +128,7 @@ if echo "$CREATE_RESPONSE" | grep -q '"id"'; then
   OWNER_ID=$(echo "$CREATE_RESPONSE" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
   if kubectl run -n "$NS" smoke-db-read --rm -it \
       --image=curlimages/curl:8.6.0 --restart=Never --quiet -- \
-      curl -sf --max-time 10 "http://customers-service.${NS}:8081/api/customer/owners/${OWNER_ID}" \
+      curl -sf --max-time 10 "http://customers-service.${NS}:8081/owners/${OWNER_ID}" \
       > /dev/null 2>&1; then
     ok "RDS read: owner read back succeeded (id=${OWNER_ID})"
   else
