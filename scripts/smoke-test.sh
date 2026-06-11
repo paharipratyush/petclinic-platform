@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 # Smoke test: validates all 8 petclinic services are running and healthy.
 # Usage: ./scripts/smoke-test.sh [dev|prod]
+#        ./scripts/smoke-test.sh --env dev
 # Exit 0 = all checks passed; exit 1 = one or more checks failed.
 
 set -euo pipefail
 
-ENV="${1:-dev}"
+ENV="dev"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env) ENV="$2"; shift 2 ;;
+    dev|prod) ENV="$1"; shift ;;
+    *) echo "Usage: $0 [--env] <dev|prod>"; exit 1 ;;
+  esac
+done
 NS="petclinic-${ENV}"
 PASS=0
 FAIL=0
