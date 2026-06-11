@@ -70,7 +70,15 @@ echo "  Bringing up petclinic-$ENV"
 echo "============================================================"
 echo ""
 
+# ── Step 0: Ensure state backend exists ───────────────────────────────────
+# bootstrap-state.sh creates the S3 bucket + DynamoDB table if they don't exist,
+# and patches backend.tf with the real account ID. Safe to run every time — it is
+# fully idempotent (skips creation when resources already exist).
+echo "==> Step 0 — Ensuring Terraform state backend (S3 + DynamoDB) exists..."
+bash "$SCRIPT_DIR/bootstrap-state.sh"
+
 # ── Step 1: Terraform apply ────────────────────────────────────────────────
+echo ""
 echo "==> Step 1 — Terraform apply (EKS, RDS, VPC, ACM, Cloudflare DNS)..."
 echo "    This takes approximately 15-20 minutes on first run."
 
@@ -79,13 +87,6 @@ echo "    This takes approximately 15-20 minutes on first run."
 for _stale in "$TF_DIR/errored.tfstate" "$TF_DIR/destroy.plan" "$TF_DIR/plan.out"; do
   [[ -f "$_stale" ]] && { echo "  Removing stale $(basename "$_stale")..."; rm -f "$_stale"; }
 done
-
-# Ensure backend.tf has the real account ID (replaces YOUR_ACCOUNT_ID placeholder at runtime)
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
-if [[ -n "$ACCOUNT_ID" ]]; then
-  sed -i "s|petclinic-terraform-state-YOUR_ACCOUNT_ID|petclinic-terraform-state-${ACCOUNT_ID}|g" \
-    "$TF_DIR/backend.tf" 2>/dev/null || true
-fi
 
 tf -chdir="$TF_DIR" init -upgrade
 tf -chdir="$TF_DIR" plan -out /tmp/petclinic-$ENV.plan

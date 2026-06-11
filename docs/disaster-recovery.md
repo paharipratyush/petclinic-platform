@@ -1,6 +1,6 @@
 # Disaster Recovery Plan — Petclinic Platform
 
-**Last Updated:** 2026-06-10
+**Last Updated:** 2026-06-11
 **Ticket:** PETPLAT-99
 
 > **Purpose:** Define RTO/RPO targets, backup strategy, and step-by-step recovery procedures for every failure scenario.
@@ -270,70 +270,46 @@ Use this when rebuilding from scratch after a catastrophic loss.
 - `CLOUDFLARE_API_TOKEN` set in environment
 - Secrets ready: `TF_VAR_openai_api_key`, `TF_VAR_grafana_admin_password`, `TF_VAR_budget_alert_email`, `TF_VAR_domain_name`
 
-### Step 1: Bootstrap state backend
+### Step 1: One command rebuild
+
+`up.sh` is fully self-contained. It creates the state backend, provisions all infrastructure, and installs every cluster component in the correct order:
 
 ```bash
-bash scripts/bootstrap-state.sh {env}
-```
+# Set required env vars first
+export CLOUDFLARE_API_TOKEN="your-token"
+export TF_VAR_domain_name="yourdomain.com"
+export TF_VAR_openai_api_key="sk-..."
+export TF_VAR_grafana_admin_password="YourPassword!"
+export TF_VAR_budget_alert_email="you@example.com"
 
-### Step 2: Apply Terraform
-
-```bash
-cd terraform/environments/{env}
-terraform init
-terraform plan -out plan.out
-terraform apply plan.out
-```
-
-### Step 3: Configure kubectl
-
-```bash
-aws eks update-kubeconfig \
-  --region eu-central-1 \
-  --name petclinic-{env}
-```
-
-### Step 4: Install cluster add-ons
-
-```bash
+# Deploy everything
 bash scripts/up.sh --env {env}
-# This installs: ESO, LB Controller, Karpenter, observability stack
 ```
 
-### Step 5: Apply base K8s manifests
+What this runs in order:
+- **Step 0** — Creates S3 state bucket + DynamoDB lock table (idempotent)
+- **Step 1** — `terraform apply`: VPC, EKS, RDS, ECR, IAM, Cloudflare DNS, ACM cert
+- **Step 1a/1b** — Updates ECR registry URL and RDS endpoint in `helm-values/`
+- **Step 2** — `aws eks update-kubeconfig`
+- **Step 3** — ArgoCD install
+- **Step 3.5** — Karpenter + metrics-server + NodePool
+- **Step 4** — External Secrets Operator
+- **Step 5** — ArgoCD Application CRDs + RBAC
+- **Step 6** — AWS LB Controller + Ingress
+- **Step 7** — Observability stack (Prometheus, Grafana, Loki, FluentBit, Zipkin, Alertmanager)
 
-```bash
-kubectl apply -f k8s/base/namespaces/
-kubectl apply -f k8s/base/observability/namespace.yaml
-kubectl apply -f k8s/base/external-secrets/cluster-secret-store.yaml
-kubectl apply -f k8s/base/external-secrets/
-kubectl apply -f k8s/base/network-policies/
-kubectl apply -f k8s/base/observability/network-policies.yaml
+### Step 2: Repopulate ECR (first deploy only)
+
+ECR repos are empty after a destroy. Trigger a full image build:
+
+```
+App repo fork → GitHub Actions → "CI - Build and Push" → Run workflow → force_rebuild_all=true
 ```
 
-### Step 6: Install ArgoCD
+### Step 3: Verify
 
 ```bash
-kubectl apply -f k8s/argocd/install/namespace.yaml
-kubectl apply -f k8s/argocd/install/install.yaml
-kubectl wait --for=condition=available deployment/argocd-server \
-  -n argocd --timeout=300s
-kubectl apply -f k8s/argocd/argocd-rbac-cm.yaml
-kubectl apply -f k8s/argocd/appproject-dev.yaml
-kubectl apply -f k8s/argocd/appproject-prod.yaml
-```
-
-### Step 7: Register ArgoCD applications
-
-```bash
-kubectl apply -f k8s/argocd/applications/{env}/
-# ArgoCD auto-syncs dev; prod requires manual sync in ArgoCD UI
-```
-
-### Step 8: Verify
-
-```bash
-bash scripts/smoke-test.sh {env}
+bash scripts/smoke-test.sh --env {env}
 ```
 
 ---
@@ -343,5 +319,6 @@ bash scripts/smoke-test.sh {env}
 | Date | Environment | Outcome | Notes |
 |------|-------------|---------|-------|
 | 2026-06-10 | prod | ✅ Full destroy + rebuild verified end-to-end | Prod was fully deployed (all 8 services Running, HTTPS live at petclinic.{YOUR_DOMAIN}), then torn down via `bash scripts/destroy.sh --env prod`. Rebuild steps above match `scripts/up.sh --env prod` exactly. Time-to-destroy: ~25 min (Karpenter node drain + terraform destroy). Time-to-build: ~45 min (terraform apply → ArgoCD sync → all pods Running). No orphaned resources. |
+| 2026-06-11 | dev + prod | ✅ Complete AWS account wipe + destroy script hardening | Both environments destroyed and AWS account confirmed fully empty. Uncovered and fixed 4 destroy gaps: (1) orphaned EBS volumes from EBS CSI driver PVCs, (2) CloudWatch log groups from EKS control-plane logging, (3) non-deletable S3 state bucket due to versioned objects, (4) Cloudflare 81044 errors from shared CNAME under two ACM SANs. All 4 now handled automatically by `destroy.sh`. `up.sh` updated to call `bootstrap-state.sh` in Step 0 (no manual prerequisite). |
 
 **Next scheduled DR test:** Quarterly (before the next prod re-deployment).

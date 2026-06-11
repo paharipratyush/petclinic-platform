@@ -1,6 +1,6 @@
 # Onboarding Guide
 
-**Last Updated:** 2026-06-09
+**Last Updated:** 2026-06-11
 
 Get a new engineer productive with the Petclinic platform in under 90 minutes.
 
@@ -103,7 +103,7 @@ ls -la
 cat CLAUDE.md
 ```
 
-### Set environment variables and bootstrap Terraform state
+### Set environment variables and deploy
 
 ```bash
 # Required — Cloudflare API token (Zone:Read + DNS:Edit on your domain)
@@ -115,23 +115,23 @@ export TF_VAR_openai_api_key="sk-..."
 export TF_VAR_grafana_admin_password="YourPassword!"
 export TF_VAR_budget_alert_email="you@example.com"
 
-# One-time: create S3 bucket + DynamoDB for Terraform state
-bash scripts/bootstrap-state.sh
-
 # Copy the example tfvars and fill in non-secret values
 cp terraform/environments/dev/terraform.tfvars.example terraform/environments/dev/terraform.tfvars
 # Edit terraform.tfvars: replace the yourdomain.com and your-github-username placeholders
 #   domain_name = "yourdomain.com"          → your Cloudflare-managed domain
 #   github_repo = "your-github-username/spring-petclinic-microservices"  → your fork (required)
 
-# Deploy everything
+# Deploy everything — up.sh creates the Terraform state backend automatically
 bash scripts/up.sh --env dev
 ```
+
+> **No manual bootstrap step:** `up.sh` calls `scripts/bootstrap-state.sh` internally at startup (Step 0). The S3 state bucket and DynamoDB lock table are created automatically on first run. You do not need to run `bootstrap-state.sh` yourself.
 
 ### What `up.sh` Does (Behind the Scenes)
 
 `up.sh` is the master bootstrap script. Understanding what it does helps you diagnose failures and know what state the cluster is in at each stage:
 
+0. **State backend** — Creates the S3 bucket + DynamoDB table for Terraform remote state (idempotent, skipped if they already exist). Patches `backend.tf` with your account ID.
 1. **Terraform apply** (~15 min) — Creates VPC, EKS cluster, RDS database, ECR repos, IAM roles, Karpenter SQS queue, Cloudflare DNS records, ACM certificate.
 2. **ECR registry update** — Reads `terraform output ecr_registry_url` and updates `helm-values/dev.yaml` with your account-specific ECR URL, then commits and pushes to Git.
 3. **kubectl config** — Runs `aws eks update-kubeconfig` so subsequent `kubectl` commands hit the new cluster.

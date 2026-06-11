@@ -190,22 +190,17 @@ cp terraform/environments/dev/terraform.tfvars.example terraform/environments/de
 # github_repo is required (not optional) — it scopes the OIDC trust policy for CI/CD
 ```
 
-### 4 — Bootstrap state backend (once per AWS account)
+### 4 — Deploy everything with one command
 
 ```bash
-bash scripts/bootstrap-state.sh
-```
-
-This creates the S3 bucket + DynamoDB table and **automatically updates `backend.tf`** in both environments with your account ID — no manual editing required.
-
-### 5 — Deploy everything with one command
-
-```bash
-# This runs terraform apply + installs ArgoCD, Karpenter, ESO, LB Controller, observability
+# Creates state backend (S3 + DynamoDB), runs terraform apply, installs
+# ArgoCD, Karpenter, ESO, LB Controller, and the full observability stack.
 bash scripts/up.sh --env dev
 ```
 
-`up.sh` auto-detects your fork URL from `git remote get-url origin` and configures ArgoCD to watch your repo — no manual YAML editing required.
+`up.sh` is fully self-contained:
+- Automatically creates the Terraform state backend (S3 bucket + DynamoDB table) if they don't exist — no separate `bootstrap-state.sh` step required.
+- Auto-detects your fork URL from `git remote get-url origin` and configures ArgoCD to watch your repo — no manual YAML editing required.
 
 ### 6 — Populate ECR (first deploy only)
 
@@ -224,7 +219,15 @@ bash scripts/smoke-test.sh --env dev
 
 ```bash
 bash scripts/destroy.sh --env dev
+bash scripts/destroy.sh --env prod   # if prod was also built
 ```
+
+`destroy.sh` performs a **complete cleanup** — no manual AWS console work needed:
+- Terraform-managed resources: EKS, RDS, VPC, ECR, IAM, Cloudflare DNS, ACM cert
+- Orphaned EBS volumes (observability PVCs left by the EBS CSI driver)
+- CloudWatch log groups (EKS control-plane logs)
+- Secrets Manager secrets (`petclinic/{env}/*` and shared `petclinic/alertmanager-smtp`)
+- Terraform state backend (S3 + DynamoDB) — automatically deleted when both environments are empty, and `backend.tf` is reset to the `YOUR_ACCOUNT_ID` placeholder
 
 > All required env vars (CLOUDFLARE_API_TOKEN, TF_VAR_*) must be set before running `destroy.sh`.
 

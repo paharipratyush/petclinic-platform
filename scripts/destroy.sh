@@ -462,29 +462,160 @@ if ! $DESTROY_OK; then
   fi
 fi
 
+# ── Step 3: Delete orphaned EBS volumes ──────────────────────────────────────
+# The EBS CSI driver provisions PersistentVolumes for the observability stack
+# (Prometheus, Grafana, Loki, Alertmanager). These PVs become orphaned "available"
+# EBS volumes when the EKS cluster is deleted — Terraform never owned them and
+# will not remove them. They cost $0.10/GB/month indefinitely if left behind.
+echo ""
+echo "==> Step 3 — Removing orphaned EBS volumes (observability PVCs)..."
+EBS_VOLS=$(aws ec2 describe-volumes --region "$REGION" \
+  --filters "Name=status,Values=available" \
+            "Name=tag:KubernetesCluster,Values=$NAMESPACE" \
+  --query "Volumes[*].VolumeId" --output text 2>/dev/null | tr '\t' ' ' || true)
+if [[ -n "$EBS_VOLS" && "$EBS_VOLS" != "None" ]]; then
+  for _vol in $EBS_VOLS; do
+    _pvc=$(aws ec2 describe-volumes --region "$REGION" --volume-ids "$_vol" \
+      --query "Volumes[0].Tags[?Key=='kubernetes.io/created-for/pvc/name'].Value" \
+      --output text 2>/dev/null || echo "unknown")
+    echo "  Deleting $_vol ($_pvc)..."
+    aws ec2 delete-volume --region "$REGION" --volume-id "$_vol" 2>/dev/null \
+      && echo "    OK" || echo "    WARNING: could not delete $_vol"
+  done
+else
+  echo "  No orphaned EBS volumes found."
+fi
+
+# ── Step 4: Delete CloudWatch log groups ─────────────────────────────────────
+# EKS creates /aws/eks/{cluster}/cluster log groups for control-plane logging.
+# These persist indefinitely after cluster deletion with no retention policy.
+# MSYS_NO_PATHCONV=1 prevents Git Bash on Windows from converting /aws/... paths.
+echo ""
+echo "==> Step 4 — Deleting CloudWatch log groups..."
+_CW_GROUP="/aws/eks/${NAMESPACE}/cluster"
+if MSYS_NO_PATHCONV=1 aws logs describe-log-groups --region "$REGION" \
+    --log-group-name-prefix "$_CW_GROUP" \
+    --query "length(logGroups)" --output text 2>/dev/null | grep -qE "^[1-9]"; then
+  MSYS_NO_PATHCONV=1 aws logs delete-log-group \
+    --log-group-name "$_CW_GROUP" --region "$REGION" 2>/dev/null \
+    && echo "  Deleted: $_CW_GROUP" \
+    || echo "  WARNING: could not delete $_CW_GROUP"
+else
+  echo "  Not found (already deleted or logging was not enabled)."
+fi
+
+# ── Step 5: Tear down Terraform state backend ─────────────────────────────────
+# The S3 bucket and DynamoDB table are shared between dev and prod and created
+# by bootstrap-state.sh (called automatically by up.sh). Only tear them down
+# once ALL environments have empty Terraform state. Also deletes the shared
+# petclinic/alertmanager-smtp secret (manually created, not Terraform-managed).
+echo ""
+echo "==> Step 5 — Checking if state backend should be torn down..."
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
+if [[ -z "$ACCOUNT_ID" ]]; then
+  echo "  WARNING: could not determine AWS account ID — skipping state backend cleanup."
+else
+  _BUCKET="petclinic-terraform-state-${ACCOUNT_ID}"
+  _BUCKET_EXISTS=$(aws s3api head-bucket --bucket "$_BUCKET" 2>/dev/null && echo "yes" || echo "no")
+
+  if [[ "$_BUCKET_EXISTS" == "yes" ]]; then
+    _ALL_EMPTY=true
+    for _other_env in dev prod; do
+      [[ "$_other_env" == "$ENV" ]] && continue
+      _tmp="/tmp/_petclinic_tfstate_check_$$_${_other_env}.json"
+      _count=$(aws s3api get-object --bucket "$_BUCKET" \
+        --key "petclinic/${_other_env}/terraform.tfstate" "$_tmp" 2>/dev/null && \
+        python3 -c "
+import json, sys
+try:
+    d=json.load(open('${_tmp}'))
+    print(len(d.get('resources',[])))
+except: print(0)
+" 2>/dev/null || echo "0")
+      rm -f "$_tmp"
+      if [[ "${_count:-0}" -gt 0 ]]; then
+        echo "  petclinic-$_other_env has ${_count} resource(s) still in state — preserving state backend."
+        _ALL_EMPTY=false
+      fi
+    done
+
+    if $_ALL_EMPTY; then
+      echo "  All environments are empty — tearing down state backend..."
+
+      # Delete shared alertmanager-smtp secret (user-created, not in Terraform state)
+      if aws secretsmanager describe-secret --secret-id "petclinic/alertmanager-smtp" \
+          --region "$REGION" &>/dev/null 2>&1; then
+        echo "  Force-deleting petclinic/alertmanager-smtp..."
+        aws secretsmanager delete-secret --region "$REGION" \
+          --secret-id "petclinic/alertmanager-smtp" \
+          --force-delete-without-recovery 2>/dev/null \
+          && echo "  Secret deleted." || echo "  WARNING: could not delete secret."
+      fi
+
+      # Empty S3 bucket: remove all versioned objects and delete markers first,
+      # then delete the bucket itself. aws s3 rb --force does not remove versions.
+      echo "  Emptying S3 state bucket: $_BUCKET"
+      for _q in "Versions[*].{Key:Key,VersionId:VersionId}" \
+                "DeleteMarkers[*].{Key:Key,VersionId:VersionId}"; do
+        aws s3api list-object-versions --bucket "$_BUCKET" \
+          --query "$_q" --output text 2>/dev/null \
+          | while IFS=$'\t' read -r _key _vid; do
+              [[ -z "$_key" || "$_key" == "None" ]] && continue
+              aws s3api delete-object --bucket "$_BUCKET" \
+                --key "$_key" --version-id "$_vid" >/dev/null 2>&1
+            done
+      done
+
+      aws s3 rb "s3://$_BUCKET" 2>/dev/null \
+        && echo "  S3 bucket deleted: $_BUCKET" \
+        || echo "  WARNING: could not delete S3 bucket — may still have objects."
+
+      echo "  Deleting DynamoDB table: petclinic-terraform-locks"
+      aws dynamodb delete-table --table-name "petclinic-terraform-locks" \
+        --region "$REGION" 2>/dev/null \
+        && echo "  DynamoDB table deleted." \
+        || echo "  WARNING: DynamoDB table could not be deleted."
+
+      # Reset backend.tf files to the YOUR_ACCOUNT_ID placeholder so git stays
+      # clean and the next up.sh run can substitute any deployer's account ID.
+      for _env_dir in "$REPO_ROOT/terraform/environments"/*/; do
+        _bfile="$_env_dir/backend.tf"
+        [[ -f "$_bfile" ]] && \
+          sed -i "s|petclinic-terraform-state-${ACCOUNT_ID}|petclinic-terraform-state-YOUR_ACCOUNT_ID|g" \
+            "$_bfile" 2>/dev/null || true
+      done
+      echo "  backend.tf files reset to YOUR_ACCOUNT_ID placeholder."
+    fi
+  else
+    echo "  State bucket not found — already cleaned up."
+  fi
+fi
+
 echo ""
 echo "============================================================"
 echo "  petclinic-$ENV destroyed."
 echo ""
-echo "  Preserved (not managed by this script):"
-echo "    - Terraform state in S3 (petclinic-terraform-state-*/)"
-echo "    - DynamoDB lock table (petclinic-terraform-locks)"
-echo "    - Cloudflare DNS zone (ACM validation + app CNAMEs removed;"
-echo "      the zone itself is not managed by Terraform)"
+echo "  Cloudflare DNS zone preserved (not managed by Terraform)."
 echo ""
-echo "  Destroyed (must rebuild with up.sh):"
+echo "  Destroyed and cleaned up:"
 echo "    - EKS cluster, node groups, add-ons"
 if [[ "$ENV" == "prod" ]]; then
-  echo "    - RDS instance (final snapshot: petclinic-prod-mysql-final created in AWS)"
+  echo "    - RDS instance (final snapshot: petclinic-prod-mysql-final in AWS)"
 else
   echo "    - RDS instance (no snapshot — skip_final_snapshot = true)"
 fi
-echo "    - VPC, subnets, IGW, security groups, NAT"
-echo "    - ECR repos + all images — trigger CI via workflow_dispatch after up.sh"
-echo "    - Secrets Manager secrets — recreated automatically by terraform apply"
-echo "    - Cloudflare DNS records — recreated automatically by terraform apply"
+echo "    - VPC, subnets, IGW, security groups"
+echo "    - ECR repos + all images"
+echo "    - Secrets Manager secrets"
+echo "    - Cloudflare DNS records + ACM certificate"
+echo "    - Orphaned EBS volumes (observability PVCs)"
+echo "    - CloudWatch log groups"
+echo "    - Terraform state backend (S3 + DynamoDB) — if both envs are empty"
 echo ""
-echo "  To rebuild: bash scripts/up.sh --env $ENV"
+echo "  To rebuild from scratch:"
+echo "    bash scripts/up.sh --env $ENV"
+echo "    (up.sh re-creates the state backend automatically before terraform apply)"
+echo ""
 echo "  Then repopulate ECR: GitHub Actions → 'CI - Build and Push' → Run workflow"
-echo "    (force_rebuild_all=true — do NOT push an empty commit)"
+echo "    force_rebuild_all=true  (do NOT push an empty commit)"
 echo "============================================================"
