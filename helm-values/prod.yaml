@@ -1,4 +1,4 @@
-﻿# Prod environment overrides â€” merged last, always wins over per-service values
+# Prod environment overrides â€” merged last, always wins over per-service values
 # Target namespace: petclinic-prod
 # HPA, PDB, and replica counts are per-service in helm-values/{service}.yaml â€” they encode
 # prod-appropriate defaults. dev.yaml overrides: replicaCount=1, autoscaling/PDB disabled.
