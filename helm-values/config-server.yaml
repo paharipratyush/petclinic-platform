@@ -1,6 +1,6 @@
 image:
   name: config-server
-  tag: "793ac56"
+  tag: "64d78dd"
 component: server
 service:
   port: 8888
