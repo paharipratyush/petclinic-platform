@@ -18,21 +18,30 @@ resource "aws_acm_certificate" "main" {
 }
 
 # ACM validation CNAMEs in Cloudflare.
-# Keyed by dvo.domain_name (e.g. "yourdomain.com" / "*.yourdomain.com") because dvo.resource_record_name
-# is only known after the ACM cert is created — using it as a for_each key causes
-# "Invalid for_each argument" on the first apply. domain_name is known at plan time.
-# allow_overwrite = true handles the case where *.domain and domain SANs produce the
-# same validation CNAME (AWS emits two domain_validation_options entries with identical
-# resource_record_* values); the second record resource overwrites the first harmlessly.
+# Keyed by dvo.domain_name and filtered to non-wildcard entries only.
+#
+# Why the filter: a wildcard cert covering *.domain + domain produces TWO
+# domain_validation_options entries but IDENTICAL resource_record_* values —
+# AWS reuses the same CNAME for both SANs. Without the filter, two
+# cloudflare_record resources manage the same DNS record. apply works
+# (allow_overwrite handles the duplicate) but destroy fails: the first
+# deletion removes the record, the second gets "Record does not exist (81044)".
+# Filtering to !startswith("*.") creates exactly ONE record, which is
+# sufficient — ACM only needs the CNAME present once to validate both SANs.
+#
+# domain_name (not resource_record_name) is used as the map key because
+# resource_record_name is unknown until after apply, causing an
+# "Invalid for_each argument" error on the first plan.
 # proxied = false is required — Cloudflare proxy cannot front ACM validation CNAMEs.
 resource "cloudflare_record" "cert_validation" {
   for_each = {
     for dvo in aws_acm_certificate.main.domain_validation_options :
-      dvo.domain_name => {
-        name    = trimsuffix(trimsuffix(dvo.resource_record_name, ".${var.domain_name}."), ".")
-        content = trimsuffix(dvo.resource_record_value, ".")
-        type    = dvo.resource_record_type
-      }
+    dvo.domain_name => {
+      name    = trimsuffix(trimsuffix(dvo.resource_record_name, ".${var.domain_name}."), ".")
+      content = trimsuffix(dvo.resource_record_value, ".")
+      type    = dvo.resource_record_type
+    }
+    if !startswith(dvo.domain_name, "*.")
   }
 
   zone_id         = data.cloudflare_zone.main.id
