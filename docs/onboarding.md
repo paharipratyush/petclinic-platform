@@ -76,9 +76,12 @@ aws sts get-caller-identity
 
 ### Fork and clone
 
-1. Fork this repo to your GitHub account.
-2. Fork `https://github.com/spring-petclinic/spring-petclinic-microservices` — this is the application code.
-3. In your microservices fork, copy `.github/workflows/build-push.yml` from this platform repo and update the `repository` field under "Dispatch app-image-built to platform repo" to point to your `petclinic-platform` fork.
+1. Fork this platform repo to your GitHub account.
+2. Fork `https://github.com/paharipratyush/spring-petclinic-microservices` (the app fork that already has `build-push.yml` pre-configured for this platform).
+3. In your microservices fork, edit `.github/workflows/build-push.yml` **line 247** — change `paharipratyush/petclinic-platform` to `<YOUR_USERNAME>/petclinic-platform`:
+   ```yaml
+   repository: <YOUR_USERNAME>/petclinic-platform   # line 247 in build-push.yml
+   ```
 
 ```bash
 git clone https://github.com/<YOUR_GITHUB_USERNAME>/petclinic-platform.git

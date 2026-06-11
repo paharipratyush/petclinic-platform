@@ -122,9 +122,11 @@ petclinic-platform/
 1. Fork this repo:         https://github.com/paharipratyush/petclinic-platform
    → your fork will be:   https://github.com/<YOUR_USERNAME>/petclinic-platform
 
-2. Fork the application repo: https://github.com/spring-petclinic/spring-petclinic-microservices
-   → copy build-push.yml from this repo's .github/workflows/ into your fork
-   → in build-push.yml, change `paharipratyush/petclinic-platform` to `<YOUR_USERNAME>/petclinic-platform`
+2. Fork the application repo: https://github.com/paharipratyush/spring-petclinic-microservices
+   (This fork already has build-push.yml pre-configured for this platform)
+   → edit .github/workflows/build-push.yml line 247:
+     Change: repository: paharipratyush/petclinic-platform
+     To:     repository: <YOUR_USERNAME>/petclinic-platform
 ```
 
 ### 2 — Set environment variables

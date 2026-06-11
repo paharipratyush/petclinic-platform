@@ -1165,7 +1165,7 @@ No NAT Gateway cost ($0 saved vs ~$35-65/mo with NAT).
 |---------------|------|-------------|---------|
 | `project` | string | Project name | `"petclinic"` |
 | `environment` | string | Environment | — |
-| `cluster_version` | string | Kubernetes version | `"1.29"` |
+| `cluster_version` | string | Kubernetes version | `"1.34"` |
 | `subnet_ids` | list(string) | Subnet IDs for cluster | — |
 | `cluster_sg_id` | string | Cluster security group ID | — |
 | `node_sg_id` | string | Node security group ID | — |
