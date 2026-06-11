@@ -552,19 +552,26 @@ except: print(0)
           && echo "  Secret deleted." || echo "  WARNING: could not delete secret."
       fi
 
-      # Empty S3 bucket: remove all versioned objects and delete markers first,
-      # then delete the bucket itself. aws s3 rb --force does not remove versions.
+      # Empty S3 bucket: delete all versioned objects and delete markers using the
+      # batch delete-objects API. aws s3 rb --force only removes unversioned objects.
+      # We write the payload to a temp file — delete-objects requires file:// input
+      # and /tmp is not reliably accessible on Windows/Git Bash, so we use TMPDIR or
+      # the project root's /tmp equivalent via mktemp.
       echo "  Emptying S3 state bucket: $_BUCKET"
-      for _q in "Versions[*].{Key:Key,VersionId:VersionId}" \
-                "DeleteMarkers[*].{Key:Key,VersionId:VersionId}"; do
+      _del_tmp=$(mktemp 2>/dev/null || echo "${REPO_ROOT}/.del_tmp_$$.json")
+      for _qtype in "Versions" "DeleteMarkers"; do
         aws s3api list-object-versions --bucket "$_BUCKET" \
-          --query "$_q" --output text 2>/dev/null \
-          | while IFS=$'\t' read -r _key _vid; do
-              [[ -z "$_key" || "$_key" == "None" ]] && continue
-              aws s3api delete-object --bucket "$_BUCKET" \
-                --key "$_key" --version-id "$_vid" >/dev/null 2>&1
-            done
+          --query "{Objects: ${_qtype}[*].{Key:Key,VersionId:VersionId}, Quiet: \`true\`}" \
+          --output json 2>/dev/null > "$_del_tmp"
+        # Only call delete-objects if there are actual objects (Quiet:true suppresses output)
+        if grep -q "VersionId" "$_del_tmp" 2>/dev/null; then
+          aws s3api delete-objects --bucket "$_BUCKET" \
+            --delete "file://${_del_tmp}" >/dev/null 2>&1 \
+            && echo "  Deleted $_qtype from $_BUCKET" \
+            || echo "  WARNING: error deleting some $_qtype objects"
+        fi
       done
+      rm -f "$_del_tmp"
 
       aws s3 rb "s3://$_BUCKET" 2>/dev/null \
         && echo "  S3 bucket deleted: $_BUCKET" \
