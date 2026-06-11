@@ -7,7 +7,11 @@
     "allow": [
       "Bash(git init *)",
       "Bash(git checkout *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(bash *)",
+      "Bash(kubectl apply *)",
+      "Bash(kubectl get *)",
+      "Bash(helm lint *)"
     ]
   },
   "enabledMcpjsonServers": [

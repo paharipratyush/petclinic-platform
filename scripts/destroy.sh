@@ -378,19 +378,67 @@ if ! $DESTROY_OK; then
     echo "  No orphaned ENIs found."
   fi
 
-  # ── 2d: Fix ACM for_each error on partial re-run ──────────────────────────
-  # If a previous destroy destroyed the ACM cert but left Cloudflare DNS
-  # validation records in state, Terraform cannot plan destroy (for_each keys
-  # come from the now-missing cert). Remove those stale state entries.
-  DNS_ENTRIES=$(tf -chdir="$TF_DIR" state list 2>/dev/null \
-    | grep "module.dns.cloudflare_record.cert_validation" || true)
+  # ── 2d: Handle Cloudflare / ACM cert cleanup ─────────────────────────────
+  # Two scenarios both leave cloudflare_record entries stranded in state:
+  #
+  # Case A — ACM for_each error on partial re-run: a previous partial destroy
+  #   removed the ACM cert from AWS but left cert_validation records in state.
+  #   Terraform cannot plan destroy because for_each keys come from the now-
+  #   missing cert resource. Fix: remove stale state entries.
+  #
+  # Case B — Cloudflare 81044 "Record does not exist": the wildcard cert has two
+  #   SANs (*.domain + domain) that share one CNAME record in Cloudflare.
+  #   allow_overwrite=true handles creation; on destroy the first deletion succeeds
+  #   and the second gets "Record does not exist. (81044)". The app DNS record
+  #   (petclinic-{env}.domain → ALB) can also be 81044 if the ALB was already
+  #   removed before destroy ran. Fix: remove all cloudflare_record entries from
+  #   state, delete the ACM cert from AWS directly, clean up remaining state.
+  ALL_CF_RECORDS=$(tf -chdir="$TF_DIR" state list 2>/dev/null \
+    | grep "cloudflare_record" || true)
   CERT_IN_STATE=$(tf -chdir="$TF_DIR" state list 2>/dev/null \
-    | grep "module.dns.aws_acm_certificate" || true)
+    | grep "module.dns.aws_acm_certificate.main$" || true)
 
-  if [[ -n "$DNS_ENTRIES" && -z "$CERT_IN_STATE" ]]; then
-    echo "  ACM cert is gone but DNS validation records remain in state — removing stale entries..."
-    echo "$DNS_ENTRIES" | while read -r resource; do
-      tf -chdir="$TF_DIR" state rm "$resource" || true
+  if [[ -n "$ALL_CF_RECORDS" ]]; then
+    echo "  Removing stale Cloudflare record(s) from state (81044 or cert_validation duplicate)..."
+    echo "$ALL_CF_RECORDS" | while read -r resource; do
+      echo "    Removing: $resource"
+      tf -chdir="$TF_DIR" state rm "$resource" 2>/dev/null || true
+    done
+  fi
+
+  if [[ -n "$CERT_IN_STATE" ]]; then
+    # Extract cert ARN from state and delete from AWS, then remove state entry
+    CERT_ARN=$(tf -chdir="$TF_DIR" state show module.dns.aws_acm_certificate.main 2>/dev/null \
+      | grep '^\s*id\s*=' | head -1 | awk '{print $3}' | tr -d '"' || echo "")
+    if [[ -n "$CERT_ARN" ]]; then
+      echo "  Deleting orphaned ACM certificate: $CERT_ARN"
+      aws acm delete-certificate --certificate-arn "$CERT_ARN" --region "$REGION" 2>/dev/null \
+        && echo "    Deleted." \
+        || echo "    WARNING: could not delete cert (may be in use or already deleted)."
+    fi
+    for _acm_res in \
+      module.dns.aws_acm_certificate.main \
+      module.dns.aws_acm_certificate_validation.main \
+      module.dns.data.cloudflare_zone.main; do
+      tf -chdir="$TF_DIR" state rm "$_acm_res" 2>/dev/null || true
+    done
+    echo "  ACM cert state entries removed."
+  fi
+
+  # Delete any other orphaned ACM certs for this domain (from previous partial
+  # destroys) that are no longer in Terraform state but still exist in AWS.
+  if [[ -n "${TF_VAR_domain_name:-}" ]]; then
+    ORPHAN_CERTS=$(aws acm list-certificates --region "$REGION" \
+      --query "CertificateSummaryList[?InUse==\`false\`].CertificateArn" \
+      --output text 2>/dev/null || true)
+    for _arn in $ORPHAN_CERTS; do
+      _domain=$(aws acm describe-certificate --certificate-arn "$_arn" --region "$REGION" \
+        --query "Certificate.DomainName" --output text 2>/dev/null || echo "")
+      if [[ "$_domain" == "*.${TF_VAR_domain_name}" ]]; then
+        echo "  Deleting additional orphaned ACM cert: $_arn"
+        aws acm delete-certificate --certificate-arn "$_arn" --region "$REGION" 2>/dev/null \
+          || echo "  WARNING: could not delete $_arn"
+      fi
     done
   fi
 
