@@ -518,7 +518,7 @@ if [[ -z "$ACCOUNT_ID" ]]; then
   echo "  WARNING: could not determine AWS account ID — skipping state backend cleanup."
 else
   _BUCKET="petclinic-terraform-state-${ACCOUNT_ID}"
-  _BUCKET_EXISTS=$(aws s3api head-bucket --bucket "$_BUCKET" 2>/dev/null && echo "yes" || echo "no")
+  _BUCKET_EXISTS=$(aws s3api head-bucket --bucket "$_BUCKET" --region "$REGION" 2>/dev/null && echo "yes" || echo "no")
 
   if [[ "$_BUCKET_EXISTS" == "yes" ]]; then
     _ALL_EMPTY=true
