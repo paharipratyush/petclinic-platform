@@ -151,19 +151,47 @@ echo "  Prometheus deployed."
 # ── Step 4: Deploy Alertmanager ───────────────────────────────────────────────
 echo ""
 echo "==> Step 4 — Deploying Alertmanager..."
-# Apply the ExternalSecret — ESO creates alertmanager-config Secret from Secrets Manager.
-# Prereq: petclinic/alertmanager-smtp must exist in Secrets Manager before this step.
-kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/alertmanager-config.yaml"
-echo "  Waiting for ESO to create alertmanager-config secret..."
-kubectl wait externalsecret/alertmanager-config -n monitoring \
-  --for=condition=Ready --timeout=120s || {
-  echo "  WARNING: alertmanager-config ExternalSecret not Ready within 120s."
-  echo "  Ensure petclinic/alertmanager-smtp exists in Secrets Manager."
-}
+
+# Alertmanager requires a Secret named 'alertmanager-config' mounted at /etc/alertmanager/.
+# If petclinic/alertmanager-smtp exists in Secrets Manager, ESO builds the full SMTP config.
+# If not, we create a minimal null-receiver Secret so the pod starts cleanly without email.
+if aws secretsmanager describe-secret \
+    --secret-id petclinic/alertmanager-smtp \
+    --region eu-central-1 &>/dev/null; then
+  echo "  SMTP secret found — deploying with email alert configuration via ESO..."
+  # Remove any pre-existing null-receiver Secret so ESO can create and own a fresh one
+  kubectl delete secret alertmanager-config -n monitoring --ignore-not-found
+  kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/alertmanager-config.yaml"
+  echo "  Waiting for ESO to create alertmanager-config secret..."
+  kubectl wait externalsecret/alertmanager-config -n monitoring \
+    --for=condition=Ready --timeout=120s || {
+    echo "  WARNING: alertmanager-config ExternalSecret not Ready within 120s. Check ESO pod logs."
+  }
+else
+  echo "  petclinic/alertmanager-smtp not found in Secrets Manager."
+  echo "  Deploying alertmanager with null receiver (no email alerts)."
+  echo "  To enable email alerts later, see the NOTE at the end of this script."
+  # Create/update the Secret directly so alertmanager can mount it immediately.
+  # When SMTP is later added to Secrets Manager, re-run this script and the
+  # ExternalSecret will replace this Secret with the full SMTP configuration.
+  kubectl create secret generic alertmanager-config -n monitoring \
+    --from-literal='alertmanager.yml=global: {}
+route:
+  receiver: "null"
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+receivers:
+  - name: "null"
+inhibit_rules: []' \
+    --dry-run=client -o yaml | kubectl apply -f -
+fi
+
 kubectl apply -f "$OBS_DIR/alertmanager.yaml"
-kubectl rollout status deployment/alertmanager -n monitoring --timeout=120s \
-  || echo "  WARNING: Alertmanager rollout timed out — SMTP secret may be missing or pod is slow to start. Continuing."
-echo "  Alertmanager deployed (check pod status with: kubectl get pods -n monitoring)"
+kubectl rollout status deployment/alertmanager -n monitoring --timeout=300s \
+  || echo "  WARNING: Alertmanager rollout timed out. Check: kubectl get pods -n monitoring"
+echo "  Alertmanager deployed."
 
 # ── Step 5: Deploy Loki ───────────────────────────────────────────────────────
 echo ""
@@ -258,11 +286,12 @@ echo "    kubectl port-forward svc/zipkin -n tracing 9411:9411"
 echo "    open: http://localhost:9411"
 echo ""
 echo "  NOTE: Email alerts require petclinic/alertmanager-smtp in Secrets Manager."
-echo "  If ESO ExternalSecret shows NotReady, create it with:"
-echo "    aws secretsmanager create-secret \\"
-echo "      --name petclinic/alertmanager-smtp \\"
-echo "      --secret-string '{\"email\":\"you@gmail.com\",\"password\":\"xxxx xxxx xxxx xxxx\"}'"
-echo "  ESO refreshes every 1h — or force it with:"
-echo "    kubectl annotate externalsecret alertmanager-config -n monitoring force-sync=\$(date +%s) --overwrite"
+echo "  Alertmanager is running now with a null receiver (alerts are silenced, not emailed)."
+echo "  To enable email alerts:"
+echo "    1. aws secretsmanager create-secret \\"
+echo "         --name petclinic/alertmanager-smtp \\"
+echo "         --secret-string '{\"email\":\"you@gmail.com\",\"password\":\"xxxx xxxx xxxx xxxx\"}'"
+echo "    2. bash scripts/install-observability.sh --env $ENV"
+echo "       (re-run switches from null receiver to ESO-backed SMTP config automatically)"
 echo ""
 echo "==========================================================="
