@@ -1,6 +1,6 @@
 image:
   name: discovery-server
-  tag: "a3501df"
+  tag: "793ac56"
 component: server
 service:
   port: 8761

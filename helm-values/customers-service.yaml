@@ -1,6 +1,6 @@
 image:
   name: customers-service
-  tag: "a3501df"
+  tag: "793ac56"
 component: service
 service:
   port: 8081

@@ -8,7 +8,7 @@
 # image.tag is updated automatically by .github/workflows/update-image-tags.yml on each CI push.
 image:
   name: api-gateway
-  tag: "a3501df"
+  tag: "793ac56"
 component: gateway
 service:
   port: 8080

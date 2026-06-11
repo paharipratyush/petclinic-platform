@@ -1,6 +1,6 @@
 image:
   name: admin-server
-  tag: "a3501df"
+  tag: "793ac56"
 component: admin
 service:
   port: 9090
