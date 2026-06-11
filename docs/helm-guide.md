@@ -159,7 +159,7 @@ Each ArgoCD Application (in `k8s/argocd/applications/{env}/`) points to the char
 ```yaml
 spec:
   source:
-    repoURL: https://github.com/paharipratyush/petclinic-platform.git
+    repoURL: https://github.com/<YOUR_GITHUB_USERNAME>/petclinic-platform.git
     targetRevision: main
     path: helm/petclinic-service
     helm:

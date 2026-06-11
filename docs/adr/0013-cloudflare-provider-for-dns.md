@@ -8,13 +8,13 @@
 
 ## Context
 
-The original E-6 design used AWS Route 53 as the authoritative DNS for `praty.dev`:
+The original E-6 design used AWS Route 53 as the authoritative DNS for `{YOUR_DOMAIN}`:
 
 1. Terraform creates a Route 53 hosted zone.
 2. ACM requests a wildcard certificate with DNS validation; Route 53 creates the CNAME validation record.
 3. The operator updates the domain registrar's nameservers to the four Route 53 NS values.
 4. Once Route 53 is authoritative, ACM validates and issues the certificate.
-5. A Route 53 alias A record points `petclinic-dev.praty.dev` → ALB.
+5. A Route 53 alias A record points `petclinic-dev.{YOUR_DOMAIN}` → ALB.
 
 This approach breaks when the domain is registered through **Cloudflare Registrar**. Cloudflare Registrar does not support custom nameservers — the domain is permanently locked to Cloudflare's nameservers and cannot be delegated to Route 53. The Route 53 hosted zone can be created but it never becomes authoritative, so:
 
@@ -53,7 +53,7 @@ resource "cloudflare_record" "app" {
 A two-stage apply pattern is used:
 
 - **First apply** (`alb_dns_name = ""`): creates the ACM cert + IRSA role; validation CNAME goes live in Cloudflare; cert issues.
-- **Second apply** (after `install-lb-controller.sh` provisions the ALB): passes the ALB hostname to `alb_dns_name`; creates the `petclinic-dev.praty.dev` CNAME.
+- **Second apply** (after `install-lb-controller.sh` provisions the ALB): passes the ALB hostname to `alb_dns_name`; creates the `petclinic-dev.{YOUR_DOMAIN}` CNAME.
 
 Authentication uses `CLOUDFLARE_API_TOKEN` from the operator's environment — never stored in code or state.
 

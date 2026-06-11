@@ -24,7 +24,7 @@
 #
 # Required environment variables — script exits immediately if any are unset:
 #   CLOUDFLARE_API_TOKEN          — valid token with Zone:Read + DNS:Edit scope
-#   TF_VAR_domain_name            — e.g. "praty.dev"
+#   TF_VAR_domain_name            — e.g. "yourdomain.com"
 #   TF_VAR_openai_api_key         — any non-empty string (not used during destroy)
 #   TF_VAR_grafana_admin_password — any non-empty string (not used during destroy)
 #   TF_VAR_budget_alert_email     — any non-empty string (not used during destroy)

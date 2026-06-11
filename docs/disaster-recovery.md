@@ -342,6 +342,6 @@ bash scripts/smoke-test.sh {env}
 
 | Date | Environment | Outcome | Notes |
 |------|-------------|---------|-------|
-| 2026-06-10 | prod | ✅ Full destroy + rebuild verified end-to-end | Prod was fully deployed (all 8 services Running, HTTPS live at petclinic.praty.dev), then torn down via `bash scripts/destroy.sh --env prod`. Rebuild steps above match `scripts/up.sh --env prod` exactly. Time-to-destroy: ~25 min (Karpenter node drain + terraform destroy). Time-to-build: ~45 min (terraform apply → ArgoCD sync → all pods Running). No orphaned resources. |
+| 2026-06-10 | prod | ✅ Full destroy + rebuild verified end-to-end | Prod was fully deployed (all 8 services Running, HTTPS live at petclinic.{YOUR_DOMAIN}), then torn down via `bash scripts/destroy.sh --env prod`. Rebuild steps above match `scripts/up.sh --env prod` exactly. Time-to-destroy: ~25 min (Karpenter node drain + terraform destroy). Time-to-build: ~45 min (terraform apply → ArgoCD sync → all pods Running). No orphaned resources. |
 
 **Next scheduled DR test:** Quarterly (before the next prod re-deployment).

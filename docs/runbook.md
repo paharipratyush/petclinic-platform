@@ -411,7 +411,7 @@ If the AWS account is upgraded from free tier, re-enable automated backups by ch
 
 ### Overview
 
-DNS records for `praty.dev` are managed by the **Cloudflare Terraform provider** â€” there is no manual registrar step, no NS delegation, and no waiting for propagation. The provider creates ACM validation CNAMEs and the app subdomain CNAME directly in Cloudflare via API. See [ADR-0004](adr/0004-cloudflare-provider-for-dns.md) for the rationale.
+DNS records for `{YOUR_DOMAIN}` are managed by the **Cloudflare Terraform provider** â€” there is no manual registrar step, no NS delegation, and no waiting for propagation. The provider creates ACM validation CNAMEs and the app subdomain CNAME directly in Cloudflare via API. See [ADR-0004](adr/0004-cloudflare-provider-for-dns.md) for the rationale.
 
 Every `terraform plan` and `terraform apply` that touches the DNS module or the app CNAME requires `CLOUDFLARE_API_TOKEN` to be set in the shell environment. The token is **never stored in code or state**.
 
@@ -427,7 +427,7 @@ Every `terraform plan` and `terraform apply` that touches the DNS module or the 
 
 1. Generate a token at [Cloudflare Dashboard â†’ My Profile â†’ API Tokens](https://dash.cloudflare.com/profile/api-tokens):
    - Use the **"Edit zone DNS"** template
-   - Scope it to the specific zone (`praty.dev`)
+   - Scope it to the specific zone (`{YOUR_DOMAIN}`)
    - Permissions needed: `Zone:Read` + `DNS:Edit`
 
 2. Export the token in your shell before running Terraform:
@@ -438,7 +438,7 @@ Every `terraform plan` and `terraform apply` that touches the DNS module or the 
 3. Then run Terraform as normal:
    ```bash
    cd terraform/environments/dev
-   terraform plan -var="domain_name=praty.dev" -out plan.out
+   terraform plan -var="domain_name={YOUR_DOMAIN}" -out plan.out
    terraform apply plan.out
    ```
    The ACM validation CNAME is created in Cloudflare automatically. `aws_acm_certificate_validation` completes within 2â€“5 minutes with no additional steps.
@@ -541,10 +541,10 @@ The ALB is deleted when the Ingress resource is deleted.
    ```bash
    export CLOUDFLARE_API_TOKEN="<your-token>"
    cd terraform/environments/dev
-   terraform plan -var="domain_name=praty.dev" -var="alb_dns_name=$ALB_DNS" -out plan.out
+   terraform plan -var="domain_name={YOUR_DOMAIN}" -var="alb_dns_name=$ALB_DNS" -out plan.out
    terraform apply plan.out
    ```
-   This creates `petclinic-dev.praty.dev â†’ ALB` (for dev) or `petclinic.praty.dev â†’ ALB` (for prod).
+   This creates `petclinic-dev.{YOUR_DOMAIN} â†’ ALB` (for dev) or `petclinic.{YOUR_DOMAIN} â†’ ALB` (for prod).
 
 3. Persist the ALB hostname so future applies don't lose it:
    ```bash
@@ -556,14 +556,14 @@ The ALB is deleted when the Ingress resource is deleted.
 **Verify:**
 ```bash
 # DNS lookup â€” CNAME chain visible
-nslookup petclinic-dev.praty.dev
+nslookup petclinic-dev.{YOUR_DOMAIN}
 
 # HTTP â†’ HTTPS redirect (ALB listener)
-curl -I http://petclinic-dev.praty.dev
-# Expected: HTTP/1.1 301 Moved Permanently â†’ https://petclinic-dev.praty.dev
+curl -I http://petclinic-dev.{YOUR_DOMAIN}
+# Expected: HTTP/1.1 301 Moved Permanently â†’ https://petclinic-dev.{YOUR_DOMAIN}
 
 # HTTPS response (before app services are deployed, expect 404 or 503 from ALB default rule)
-curl -I https://petclinic-dev.praty.dev
+curl -I https://petclinic-dev.{YOUR_DOMAIN}
 ```
 
 **If DNS does not resolve:** Confirm the `cloudflare_record.app` resource was created:

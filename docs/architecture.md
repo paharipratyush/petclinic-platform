@@ -70,12 +70,12 @@ Spring Petclinic runs as 8 microservices on an EKS cluster in `eu-central-1`. In
 │                                                         │
 │  ┌────────────────────────────────────────────────────┐ │
 │  │  ACM (Certificate Manager)                         │ │
-│  │  *.praty.dev — wildcard TLS, DNS-validated         │ │
+│  │  *.{YOUR_DOMAIN} — wildcard TLS, DNS-validated         │ │
 │  └────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
 
-External DNS: Cloudflare (praty.dev registrar)
-petclinic-dev.praty.dev → ALB CNAME
+External DNS: Cloudflare ({YOUR_DOMAIN} registrar)
+petclinic-dev.{YOUR_DOMAIN} → ALB CNAME
 ```
 
 ---
@@ -86,7 +86,7 @@ petclinic-dev.praty.dev → ALB CNAME
 Internet
    │
    ▼
-[ALB] petclinic-dev.praty.dev:443
+[ALB] petclinic-dev.{YOUR_DOMAIN}:443
    │   TLS terminated, ACM wildcard cert
    │
    ▼
@@ -149,7 +149,7 @@ Pod networking:
   ENI pod limit resolved by Karpenter provisioning (E-14)
 
 DNS:
-  praty.dev registered at Cloudflare Registrar
+  {YOUR_DOMAIN} registered at Cloudflare Registrar
   Cloudflare Terraform provider manages DNS records
   ACM wildcard cert validated via Cloudflare CNAME (Cloudflare is authoritative)
 ```
@@ -170,7 +170,7 @@ DNS:
 | RDS instance | db.t4g.micro, single-AZ | db.t4g.micro, single-AZ |
 | RDS backups | disabled (free-tier) | 7-day retention |
 | Tag mutability | MUTABLE (re-push same tag) | IMMUTABLE |
-| DNS record | petclinic-dev.praty.dev | petclinic.praty.dev |
+| DNS record | petclinic-dev.{YOUR_DOMAIN} | petclinic.{YOUR_DOMAIN} |
 
 ---
 

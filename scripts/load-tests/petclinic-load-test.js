@@ -3,7 +3,7 @@
  *
  * Usage:
  *   k6 run scripts/load-tests/petclinic-load-test.js \
- *     -e BASE_URL=https://petclinic.praty.dev
+ *     -e BASE_URL=https://petclinic.{YOUR_DOMAIN}
  *
  * Thresholds (SLOs from technical-spec.md):
  *   - p95 latency < 500ms

@@ -89,7 +89,7 @@ petclinic-platform/
 | Cluster | Amazon EKS | K8s 1.34, managed node groups, OIDC, Graviton t4g.small (ARM64) |
 | Registry | Amazon ECR | One repo per service per env, lifecycle policies, scan-on-push |
 | Database | Amazon RDS MySQL 8.0 | Single-AZ both envs (cost optimization), Secrets Manager for credentials |
-| DNS | Cloudflare + ACM | praty.dev managed via Cloudflare; ACM cert for TLS at ALB (ADR-0013) |
+| DNS | Cloudflare + ACM | Your domain managed via Cloudflare; ACM cert for TLS at ALB (ADR-0013) |
 | Secrets | AWS Secrets Manager | External Secrets Operator syncs to K8s Secrets |
 | Ingress | AWS ALB Ingress Controller | Public ALB → API Gateway service |
 | Observability | Prometheus + Grafana + Loki | Micrometer metrics, dashboards, alerts, log aggregation (ADR-0011) |
@@ -113,32 +113,81 @@ petclinic-platform/
 
 - Terraform >= 1.6, kubectl, helm, argocd CLI
 - AWS CLI authenticated with sufficient permissions
-- `CLOUDFLARE_API_TOKEN` environment variable set
-- Secrets set: `TF_VAR_openai_api_key`, `TF_VAR_grafana_admin_password`, `TF_VAR_budget_alert_email`, `TF_VAR_domain_name`
+- A domain managed via [Cloudflare DNS](https://cloudflare.com) (free account works)
+- An [OpenAI API key](https://platform.openai.com) (for the GenAI service)
 
-### Bootstrap and Deploy
+### 1 — Fork both repos
 
-```bash
-# 1. Bootstrap Terraform state backend
-bash scripts/bootstrap-state.sh dev
+```
+1. Fork this repo:         https://github.com/paharipratyush/petclinic-platform
+   → your fork will be:   https://github.com/<YOUR_USERNAME>/petclinic-platform
 
-# 2. Apply infrastructure
-cd terraform/environments/dev
-terraform init
-terraform plan -out plan.out
-terraform apply plan.out
-
-# 3. Configure kubectl
-aws eks update-kubeconfig --region eu-central-1 --name petclinic-dev-eks
-
-# 4. Bootstrap cluster (ESO, LB Controller, Karpenter, observability)
-bash scripts/up.sh dev
-
-# 5. Run smoke test
-bash scripts/smoke-test.sh dev
+2. Fork the application repo: https://github.com/spring-petclinic/spring-petclinic-microservices
+   → copy build-push.yml from this repo's .github/workflows/ into your fork
+   → in build-push.yml, change `paharipratyush/petclinic-platform` to `<YOUR_USERNAME>/petclinic-platform`
 ```
 
-See [docs/onboarding.md](docs/onboarding.md) for the full step-by-step guide.
+### 2 — Set environment variables
+
+```bash
+# Required — Cloudflare API token (Zone:Read + DNS:Edit on your domain)
+export CLOUDFLARE_API_TOKEN="your-cloudflare-token"
+
+# Required — Terraform variables (passed without storing secrets in files)
+export TF_VAR_domain_name="yourdomain.com"        # your Cloudflare-managed domain
+export TF_VAR_openai_api_key="sk-..."              # OpenAI API key for GenAI service
+export TF_VAR_grafana_admin_password="ChangeMe!"  # Grafana dashboard password
+export TF_VAR_budget_alert_email="you@email.com"  # AWS Budget alert recipient
+```
+
+### 3 — Configure terraform.tfvars
+
+```bash
+# Copy the example and add your domain
+cp terraform/environments/dev/terraform.tfvars.example terraform/environments/dev/terraform.tfvars
+echo 'domain_name = "yourdomain.com"' >> terraform/environments/dev/terraform.tfvars
+
+# Optional: add your GitHub username for the OIDC federation (only needed in dev)
+echo 'github_repo = "YOUR_USERNAME/spring-petclinic-microservices"' >> terraform/environments/dev/terraform.tfvars
+```
+
+### 4 — Bootstrap state backend (once per AWS account)
+
+```bash
+bash scripts/bootstrap-state.sh dev
+```
+
+### 5 — Deploy everything with one command
+
+```bash
+# This runs terraform apply + installs ArgoCD, Karpenter, ESO, LB Controller, observability
+bash scripts/up.sh --env dev
+```
+
+`up.sh` auto-detects your fork URL from `git remote get-url origin` and configures ArgoCD to watch your repo — no manual YAML editing required.
+
+### 6 — Populate ECR (first deploy only)
+
+After `up.sh` finishes, trigger a full image build in GitHub Actions:
+```
+GitHub Actions → CI - Build and Push → Run workflow → force_rebuild_all=true
+```
+
+### 7 — Run smoke test
+
+```bash
+bash scripts/smoke-test.sh --env dev
+```
+
+### Destroy
+
+```bash
+bash scripts/destroy.sh --env dev
+```
+
+> All required env vars (CLOUDFLARE_API_TOKEN, TF_VAR_*) must be set before running `destroy.sh`.
+
+See [docs/onboarding.md](docs/onboarding.md) for the full step-by-step guide including GitHub Secrets setup.
 
 ## Key Design Decisions
 
@@ -149,5 +198,5 @@ See [docs/onboarding.md](docs/onboarding.md) for the full step-by-step guide.
 | [ADR-0008](docs/adr/0008-argocd-gitops.md) | ArgoCD GitOps — CI pushes image tags, ArgoCD deploys |
 | [ADR-0011](docs/adr/0011-loki-over-cloudwatch.md) | Loki over CloudWatch — cost and query experience |
 | [ADR-0012](docs/adr/0012-arm64-graviton-nodes.md) | ARM64 (Graviton) for EKS nodes — cost and Graviton free trial |
-| [ADR-0013](docs/adr/0013-cloudflare-provider-for-dns.md) | Cloudflare for DNS — praty.dev is registered with Cloudflare |
+| [ADR-0013](docs/adr/0013-cloudflare-provider-for-dns.md) | Cloudflare for DNS — domain registered with Cloudflare, no NS delegation to Route 53 |
 | [ADR-0014](docs/adr/0014-karpenter-over-cluster-autoscaler.md) | Karpenter over Cluster Autoscaler — faster, more flexible node provisioning |

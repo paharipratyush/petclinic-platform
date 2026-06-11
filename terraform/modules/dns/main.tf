@@ -1,5 +1,5 @@
-# Cloudflare zone lookup — the zone must already exist in Cloudflare (it does because
-# praty.dev is registered via Cloudflare Registrar). Zone:Read permission required.
+# Cloudflare zone lookup — the zone must already exist in Cloudflare (registered via
+# Cloudflare Registrar). Zone:Read permission required.
 data "cloudflare_zone" "main" {
   name = var.domain_name
 }
@@ -18,7 +18,7 @@ resource "aws_acm_certificate" "main" {
 }
 
 # ACM validation CNAMEs in Cloudflare.
-# Keyed by dvo.domain_name ("praty.dev" / "*.praty.dev") because dvo.resource_record_name
+# Keyed by dvo.domain_name (e.g. "yourdomain.com" / "*.yourdomain.com") because dvo.resource_record_name
 # is only known after the ACM cert is created — using it as a for_each key causes
 # "Invalid for_each argument" on the first apply. domain_name is known at plan time.
 # allow_overwrite = true handles the case where *.domain and domain SANs produce the

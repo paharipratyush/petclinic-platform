@@ -198,8 +198,33 @@ bash "$SCRIPT_DIR/install-eso.sh" --env "$ENV"
 # ── Step 5: Apply ArgoCD Application CRDs + RBAC ──────────────────────────
 echo ""
 echo "==> Step 5 — Applying ArgoCD Application CRDs and RBAC..."
-kubectl apply -f "$REPO_ROOT/k8s/argocd/appproject-${ENV}.yaml" -n argocd
-kubectl apply -f "$REPO_ROOT/k8s/argocd/applications/$ENV/" -n argocd
+
+# Auto-detect the platform repo URL from the local git remote so that any fork
+# works without manual YAML edits. ArgoCD must point to the actual fork, not the
+# original author's repo, to pick up Helm chart changes pushed by CI.
+PLATFORM_REPO_URL=$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || echo "")
+if [[ -z "$PLATFORM_REPO_URL" ]]; then
+  echo "  WARNING: could not detect git remote origin. ArgoCD will use the URL already in the YAML."
+  kubectl apply -f "$REPO_ROOT/k8s/argocd/appproject-${ENV}.yaml" -n argocd
+  kubectl apply -f "$REPO_ROOT/k8s/argocd/applications/$ENV/" -n argocd
+else
+  # Normalise to https:// and ensure .git suffix (ArgoCD requires it)
+  PLATFORM_REPO_URL=$(echo "$PLATFORM_REPO_URL" \
+    | sed 's|git@github\.com:\(.*\)|https://github.com/\1|' \
+    | sed 's|\.git$||').git
+  echo "  Using platform repo: $PLATFORM_REPO_URL"
+
+  # AppProject
+  sed "s|https://github.com/[^/]*/petclinic-platform\.git|${PLATFORM_REPO_URL}|g" \
+    "$REPO_ROOT/k8s/argocd/appproject-${ENV}.yaml" | kubectl apply -n argocd -f -
+
+  # Application CRDs — pipe each file through sed to substitute the repoURL
+  for _app_yaml in "$REPO_ROOT/k8s/argocd/applications/$ENV/"*.yaml; do
+    sed "s|https://github.com/[^/]*/petclinic-platform\.git|${PLATFORM_REPO_URL}|g" \
+      "$_app_yaml" | kubectl apply -n argocd -f -
+  done
+fi
+
 kubectl apply -f "$REPO_ROOT/k8s/argocd/argocd-rbac-cm.yaml" -n argocd
 echo "    AppProject and Applications registered in ArgoCD."
 

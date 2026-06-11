@@ -1,6 +1,21 @@
-# Copy this file to terraform.tfvars and set your values.
-# terraform.tfvars is gitignored — never commit it directly.
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit it.
+#
+# SENSITIVE VALUES must be passed as environment variables, not in this file:
+#   export TF_VAR_openai_api_key="sk-..."
+#   export TF_VAR_grafana_admin_password="YourPassword!"
+#   export TF_VAR_budget_alert_email="you@example.com"
+#   export CLOUDFLARE_API_TOKEN="your-cloudflare-token"
+#
+# Non-sensitive values go here:
 
 aws_region  = "eu-central-1"
 environment = "dev"
 project     = "petclinic"
+
+# Your Cloudflare-managed domain (must match CLOUDFLARE_API_TOKEN permissions)
+domain_name = "yourdomain.com"
+
+# GitHub repo for your spring-petclinic-microservices fork (owner/repo)
+# Used to scope the GitHub Actions OIDC IAM role trust policy
+github_repo = "your-github-username/spring-petclinic-microservices"

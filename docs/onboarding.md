@@ -74,8 +74,14 @@ aws sts get-caller-identity
 
 **Estimated time: 5 min**
 
+### Fork and clone
+
+1. Fork this repo to your GitHub account.
+2. Fork `https://github.com/spring-petclinic/spring-petclinic-microservices` — this is the application code.
+3. In your microservices fork, copy `.github/workflows/build-push.yml` from this platform repo and update the `repository` field under "Dispatch app-image-built to platform repo" to point to your `petclinic-platform` fork.
+
 ```bash
-git clone https://github.com/paharipratyush/petclinic-platform.git
+git clone https://github.com/<YOUR_GITHUB_USERNAME>/petclinic-platform.git
 cd petclinic-platform
 
 # Review the structure
@@ -92,6 +98,40 @@ ls -la
 # Read the project instructions
 cat CLAUDE.md
 ```
+
+### Set environment variables and bootstrap Terraform state
+
+```bash
+# Required — Cloudflare API token (Zone:Read + DNS:Edit on your domain)
+export CLOUDFLARE_API_TOKEN="your-cloudflare-token"
+
+# Required — passed without storing secrets in files
+export TF_VAR_domain_name="yourdomain.com"
+export TF_VAR_openai_api_key="sk-..."
+export TF_VAR_grafana_admin_password="YourPassword!"
+export TF_VAR_budget_alert_email="you@example.com"
+
+# One-time: create S3 bucket + DynamoDB for Terraform state
+bash scripts/bootstrap-state.sh dev
+
+# Copy the example tfvars and fill in non-secret values
+cp terraform/environments/dev/terraform.tfvars.example terraform/environments/dev/terraform.tfvars
+# Edit terraform.tfvars: set domain_name and github_repo
+
+# Deploy everything
+bash scripts/up.sh --env dev
+```
+
+### GitHub Secrets setup (app repo fork)
+
+After `terraform apply` succeeds, set these secrets in your **microservices fork** on GitHub:
+
+| Secret | Value |
+|--------|-------|
+| `AWS_ROLE_ARN` | output from `terraform output github_actions_role_arn` |
+| `AWS_REGION` | `eu-central-1` |
+| `ECR_REGISTRY` | output from `terraform output ecr_registry` |
+| `PLATFORM_REPO_TOKEN` | GitHub PAT (repo scope) for dispatching to your platform repo fork |
 
 ---
 
@@ -154,7 +194,7 @@ open http://localhost:8761
 
 ### Access the Petclinic UI
 
-The public URL is `https://petclinic-dev.praty.dev` (requires DNS + ALB).
+The public URL is `https://petclinic-dev.<YOUR_DOMAIN>` (requires DNS + ALB, set via `TF_VAR_domain_name`).
 
 For local access via port-forward:
 

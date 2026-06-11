@@ -149,7 +149,7 @@ output "openai_secret_arn" {
 }
 
 output "github_actions_role_arn" {
-  description = "GitHub Actions IAM role ARN — set this as AWS_ROLE_ARN in GitHub Secrets on paharipratyush/spring-petclinic-microservices"
+  description = "GitHub Actions IAM role ARN — set this as AWS_ROLE_ARN in GitHub Secrets on your spring-petclinic-microservices fork"
   value       = module.github_oidc.role_arn
   sensitive   = true
 }

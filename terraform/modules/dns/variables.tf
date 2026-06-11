@@ -1,5 +1,5 @@
 variable "domain_name" {
-  description = "Base domain name for the platform (e.g., praty.dev). Must be a domain managed via Cloudflare DNS. The Cloudflare zone is looked up by name — no zone ID needed. CLOUDFLARE_API_TOKEN must be set in the environment with Zone:Read and DNS:Edit permissions."
+  description = "Base domain name for the platform (e.g., yourdomain.com). Must be a domain managed via Cloudflare DNS. The Cloudflare zone is looked up by name — no zone ID needed. CLOUDFLARE_API_TOKEN must be set in the environment with Zone:Read and DNS:Edit permissions."
   type        = string
 
   validation {

@@ -11,7 +11,7 @@ spec:
   description: Petclinic dev environment — restricts source repo and deploy target
 
   sourceRepos:
-    - https://github.com/paharipratyush/petclinic-platform.git
+    - https://github.com/YOUR_GITHUB_USERNAME/petclinic-platform.git
 
   destinations:
     - namespace: petclinic-dev

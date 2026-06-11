@@ -6,7 +6,7 @@ variable "project" {
 
 variable "github_repo" {
   type        = string
-  description = "GitHub repo in owner/repo format whose main branch may assume this role (e.g., paharipratyush/spring-petclinic-microservices)"
+  description = "GitHub repo in owner/repo format whose main branch may assume this role (e.g., your-username/spring-petclinic-microservices)"
 }
 
 variable "tags" {

@@ -20,7 +20,7 @@ Use **GitHub Actions OIDC federation** to authenticate CI workflows to AWS.
 
 The implementation:
 - `aws_iam_openid_connect_provider` resource registers GitHub's OIDC provider (`token.actions.githubusercontent.com`) in AWS IAM.
-- `aws_iam_role` (`petclinic-github-actions-role`) with a trust policy scoped to a single repository and branch: `repo:paharipratyush/spring-petclinic-microservices:ref:refs/heads/main`.
+- `aws_iam_role` (`petclinic-github-actions-role`) with a trust policy scoped to a single repository and branch: `repo:{owner}/spring-petclinic-microservices:ref:refs/heads/main` (set via the `github_repo` Terraform variable).
 - Inline IAM policy grants only the ECR push permissions needed: `GetAuthorizationToken` on `*` (required by ECR), plus `BatchCheckLayerAvailability`, `InitiateLayerUpload`, `UploadLayerPart`, `CompleteLayerUpload`, `PutImage`, `GetDownloadUrlForLayer`, `BatchGetImage` scoped to `arn:aws:ecr:eu-central-1:{account}:repository/petclinic-*`.
 - CI workflow uses `aws-actions/configure-aws-credentials@v4` with `role-to-assume` set from the `AWS_ROLE_ARN` secret (contains the role ARN, not a credential).
 

@@ -17,7 +17,12 @@ variable "project" {
 }
 
 variable "domain_name" {
-  description = "Base domain name for the platform (e.g., praty.dev). Must be managed via Cloudflare DNS. CLOUDFLARE_API_TOKEN must be set in the environment. See ADR-0004."
+  description = "Base domain name for the platform (e.g., yourdomain.com). Must be managed via Cloudflare DNS. CLOUDFLARE_API_TOKEN must be set in the environment. See ADR-0013."
+  type        = string
+}
+
+variable "github_repo" {
+  description = "GitHub repository for the application CI pipeline in 'owner/repo' format (e.g., 'youruser/spring-petclinic-microservices'). Used to scope the GitHub Actions OIDC IAM role trust policy."
   type        = string
 }
 
