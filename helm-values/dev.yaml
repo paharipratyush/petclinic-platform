@@ -10,7 +10,8 @@
 # To test locally: helm template petclinic helm/petclinic-service/ -f helm-values/api-gateway.yaml -f helm-values/dev.yaml
 # Target namespace: petclinic-dev
 image:
-  registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev"
+  # up.sh replaces YOUR_ACCOUNT_ID with the deployer's AWS account ID at bootstrap time
+  registry: "YOUR_ACCOUNT_ID.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev"
 
 replicaCount: 1
 

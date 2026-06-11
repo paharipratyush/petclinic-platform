@@ -80,6 +80,18 @@ kubectl apply -f "$OBS_DIR/prometheus.yaml"
 if [[ "$ENV" == "prod" ]]; then
   echo "  Adding prod scrape targets to Prometheus config..."
   PROD_SCRAPE_YAML=$(cat <<'YAML'
+- job_name: config-server-prod
+  metrics_path: /actuator/prometheus
+  scrape_interval: 15s
+  static_configs:
+    - targets:
+        - config-server.petclinic-prod:8888
+- job_name: discovery-server-prod
+  metrics_path: /actuator/prometheus
+  scrape_interval: 15s
+  static_configs:
+    - targets:
+        - discovery-server.petclinic-prod:8761
 - job_name: api-gateway-prod
   metrics_path: /actuator/prometheus
   scrape_interval: 15s
@@ -110,6 +122,12 @@ if [[ "$ENV" == "prod" ]]; then
   static_configs:
     - targets:
         - genai-service.petclinic-prod:8084
+- job_name: admin-server-prod
+  metrics_path: /actuator/prometheus
+  scrape_interval: 15s
+  static_configs:
+    - targets:
+        - admin-server.petclinic-prod:9090
 YAML
 )
   # Read current config, append prod jobs, patch ConfigMap

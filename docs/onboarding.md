@@ -78,9 +78,10 @@ aws sts get-caller-identity
 
 1. Fork this platform repo to your GitHub account.
 2. Fork `https://github.com/paharipratyush/spring-petclinic-microservices` (the app fork that already has `build-push.yml` pre-configured for this platform).
-3. In your microservices fork, edit `.github/workflows/build-push.yml` **line 247** — change `paharipratyush/petclinic-platform` to `<YOUR_USERNAME>/petclinic-platform`:
-   ```yaml
-   repository: <YOUR_USERNAME>/petclinic-platform   # line 247 in build-push.yml
+3. In your microservices fork, edit `.github/workflows/build-push.yml` — find the `repository_dispatch` step and change the `repository:` field from `paharipratyush/petclinic-platform` to `<YOUR_USERNAME>/petclinic-platform`:
+   ```bash
+   grep -n "paharipratyush/petclinic-platform" .github/workflows/build-push.yml
+   # Edit that line: repository: <YOUR_USERNAME>/petclinic-platform
    ```
 
 ```bash
@@ -115,11 +116,13 @@ export TF_VAR_grafana_admin_password="YourPassword!"
 export TF_VAR_budget_alert_email="you@example.com"
 
 # One-time: create S3 bucket + DynamoDB for Terraform state
-bash scripts/bootstrap-state.sh dev
+bash scripts/bootstrap-state.sh
 
 # Copy the example tfvars and fill in non-secret values
 cp terraform/environments/dev/terraform.tfvars.example terraform/environments/dev/terraform.tfvars
-# Edit terraform.tfvars: set domain_name and github_repo
+# Edit terraform.tfvars: replace the yourdomain.com and your-github-username placeholders
+#   domain_name = "yourdomain.com"          → your Cloudflare-managed domain
+#   github_repo = "your-github-username/spring-petclinic-microservices"  → your fork (required)
 
 # Deploy everything
 bash scripts/up.sh --env dev
@@ -247,8 +250,8 @@ kubectl get externalsecret -n petclinic-dev
 
 ```bash
 kubectl port-forward svc/grafana -n monitoring 3000:3000 &
-open http://localhost:3000
-# Login: admin / petclinic-admin
+open http://localhost:3000   # macOS; Linux: xdg-open; Windows: start
+# Login: admin / <your TF_VAR_grafana_admin_password value>
 #
 # Dashboards → Petclinic folder:
 #   "Petclinic — Service Overview"     — all services at a glance
@@ -265,7 +268,7 @@ open http://localhost:3000
 ```bash
 kubectl port-forward svc/prometheus -n monitoring 9090:9090 &
 open http://localhost:9090
-# Status → Targets: all 5 scrape targets should be "up"
+# Status → Targets: all 8 scrape targets should be "up"
 # Alerts tab: shows active alert rules
 ```
 
@@ -281,9 +284,20 @@ open http://localhost:9411
 
 ```bash
 kubectl port-forward svc/alertmanager -n monitoring 9093:9093 &
-open http://localhost:9093
+open http://localhost:9093   # macOS; Linux: xdg-open; Windows: start
 # Shows active alerts and silences
 ```
+
+**To enable email alerts (prerequisite):** Alertmanager reads SMTP credentials from AWS Secrets Manager via ESO. Create the secret before running `up.sh`:
+
+```bash
+aws secretsmanager create-secret \
+  --name petclinic/alertmanager-smtp \
+  --secret-string '{"email":"alerts@yourdomain.com","password":"your-smtp-app-password"}' \
+  --region eu-central-1
+```
+
+If the secret is missing, Alertmanager still runs but silently drops email notifications. See `docs/monitoring-guide.md` for full details.
 
 ### Logs via kubectl
 
@@ -323,7 +337,8 @@ kubectl rollout status deployment/api-gateway -n petclinic-dev
 
 # Or force an immediate sync via ArgoCD
 kubectl port-forward svc/argocd-server -n argocd 8443:443 &
-argocd app sync api-gateway-dev --auth-token $(argocd account generate-token)
+argocd login localhost:8443 --insecure  # password = TF_VAR_grafana_admin_password (set during up.sh)
+argocd app sync api-gateway-dev
 ```
 
 ### Example: Scale a service

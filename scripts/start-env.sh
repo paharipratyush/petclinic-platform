@@ -15,10 +15,10 @@ set -euo pipefail
 REGION="${AWS_DEFAULT_REGION:-eu-central-1}"
 
 # Default node counts (adjust if your Terraform uses different values)
-DEV_DESIRED_NODES=2
-PROD_DESIRED_NODES=3
-DEV_MAX_NODES=3
-PROD_MAX_NODES=5
+DEV_DESIRED_NODES=4
+PROD_DESIRED_NODES=2
+DEV_MAX_NODES=4
+PROD_MAX_NODES=4
 
 usage() {
   echo "Usage: $0 <environment>"

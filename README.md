@@ -143,7 +143,7 @@ Developer pushes code
 
 ### Prerequisites
 
-- Terraform >= 1.6, kubectl, helm, argocd CLI
+- git, Terraform >= 1.6, kubectl, helm, argocd CLI
 - AWS CLI authenticated with sufficient permissions
 - A domain managed via [Cloudflare DNS](https://cloudflare.com) (free account works)
 - An [OpenAI API key](https://platform.openai.com) (for the GenAI service)
@@ -158,12 +158,11 @@ Developer pushes code
 
 2. Fork the application repo: https://github.com/paharipratyush/spring-petclinic-microservices
    (This fork already has build-push.yml pre-configured to build ARM64 images and push to ECR)
-   → edit .github/workflows/build-push.yml line 247:
-     Change: repository: paharipratyush/petclinic-platform
-     To:     repository: <YOUR_USERNAME>/petclinic-platform
+   → in your fork, search for `paharipratyush/petclinic-platform` in `.github/workflows/build-push.yml`
+     and replace it with `<YOUR_USERNAME>/petclinic-platform`
 ```
 
-> **Why edit line 247?** After building images, `build-push.yml` fires a `repository_dispatch` event to the platform repo's `update-image-tags.yml`. Line 247 is the `repository:` field that controls which platform repo receives that event. Without this edit, new image tags are pushed to ECR but ArgoCD never learns about them.
+> **Why this edit?** After building images, `build-push.yml` fires a `repository_dispatch` event to the platform repo's `update-image-tags.yml`. The `repository:` field in that step controls which platform repo receives the event. Without this edit, new image tags are pushed to ECR but ArgoCD never learns about them.
 
 ### 2 — Set environment variables
 
@@ -181,12 +180,13 @@ export TF_VAR_budget_alert_email="you@email.com"  # AWS Budget alert recipient
 ### 3 — Configure terraform.tfvars
 
 ```bash
-# Copy the example and add your domain
+# Copy the example file (it already contains domain_name and github_repo placeholders)
 cp terraform/environments/dev/terraform.tfvars.example terraform/environments/dev/terraform.tfvars
-echo 'domain_name = "yourdomain.com"' >> terraform/environments/dev/terraform.tfvars
 
-# Optional: add your GitHub username for the OIDC federation (only needed in dev)
-echo 'github_repo = "YOUR_USERNAME/spring-petclinic-microservices"' >> terraform/environments/dev/terraform.tfvars
+# Edit the file and replace the placeholder values:
+#   domain_name = "yourdomain.com"          → your Cloudflare-managed domain
+#   github_repo = "your-github-username/spring-petclinic-microservices"  → your fork
+# github_repo is required (not optional) — it scopes the OIDC trust policy for CI/CD
 ```
 
 ### 4 — Bootstrap state backend (once per AWS account)

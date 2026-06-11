@@ -110,7 +110,7 @@ if $CLUSTER_REACHABLE; then
     for i in $(seq 1 18); do
       # Check if any ALBs tagged with the cluster name remain
       ALB_COUNT=$(aws elbv2 describe-load-balancers --region "$REGION" \
-        --query "LoadBalancers[?contains(LoadBalancerName, 'k8s-${NAMESPACE//petclinic-/petclini}-')]|length(@)" \
+        --query "LoadBalancers[?contains(LoadBalancerName, 'k8s-${NAMESPACE//petclinic-/petclinic-}-')]|length(@)" \
         --output text 2>/dev/null || echo "0")
       if [[ "$ALB_COUNT" == "0" ]]; then
         echo "  ALB removed by controller."

@@ -24,14 +24,14 @@ data:
 
     # developer: view all; sync, action, and delete only in dev environment
     p, role:developer, applications, get, */*, allow
-    p, role:developer, applications, sync, default/config-server-dev, allow
-    p, role:developer, applications, sync, default/discovery-server-dev, allow
-    p, role:developer, applications, sync, default/api-gateway-dev, allow
-    p, role:developer, applications, sync, default/customers-service-dev, allow
-    p, role:developer, applications, sync, default/visits-service-dev, allow
-    p, role:developer, applications, sync, default/vets-service-dev, allow
-    p, role:developer, applications, sync, default/genai-service-dev, allow
-    p, role:developer, applications, sync, default/admin-server-dev, allow
+    p, role:developer, applications, sync, dev/config-server-dev, allow
+    p, role:developer, applications, sync, dev/discovery-server-dev, allow
+    p, role:developer, applications, sync, dev/api-gateway-dev, allow
+    p, role:developer, applications, sync, dev/customers-service-dev, allow
+    p, role:developer, applications, sync, dev/visits-service-dev, allow
+    p, role:developer, applications, sync, dev/vets-service-dev, allow
+    p, role:developer, applications, sync, dev/genai-service-dev, allow
+    p, role:developer, applications, sync, dev/admin-server-dev, allow
     p, role:developer, logs, get, */*, allow
 
     # Group mappings (add users/groups here as SSO is configured)

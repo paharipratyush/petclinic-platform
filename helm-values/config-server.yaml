@@ -18,6 +18,8 @@ probes:
     path: /actuator/health
   liveness:
     path: /actuator/health
+  startup:
+    path: /actuator/health
 config:
   SPRING_PROFILES_ACTIVE: "docker"
   SPRING_CLOUD_CONFIG_SERVER_GIT_URI: "https://github.com/spring-petclinic/spring-petclinic-microservices-config"

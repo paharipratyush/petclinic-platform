@@ -39,10 +39,13 @@ check_pod_running() {
   fi
 }
 
+_HTTP_COUNTER=0
 check_http() {
   local label="$1"
   local url="$2"
-  if kubectl run -n "$NS" smoke-http-check --rm -it --image=curlimages/curl:8.6.0 \
+  _HTTP_COUNTER=$((_HTTP_COUNTER + 1))
+  local pod_name="smoke-http-${_HTTP_COUNTER}"
+  if kubectl run -n "$NS" "$pod_name" --rm --image=curlimages/curl:8.6.0 \
       --restart=Never --quiet -- \
       curl -sf --max-time 10 "$url" > /dev/null 2>&1; then
     ok "HTTP OK: ${label} (${url})"
@@ -141,13 +144,7 @@ fi
 # ── 6. Observability stack ────────────────────────────────────
 echo ""
 echo "[ 6/6 ] Observability stack"
-kubectl run -n monitoring smoke-obs --rm -it \
-  --image=curlimages/curl:8.6.0 --restart=Never --quiet -- sh -c '
-    curl -sf http://prometheus:9090/-/ready > /dev/null && echo "prometheus:ready" || echo "prometheus:fail"
-    curl -sf http://alertmanager:9093/-/ready > /dev/null && echo "alertmanager:ready" || echo "alertmanager:fail"
-    curl -sf http://loki:3100/ready > /dev/null && echo "loki:ready" || echo "loki:fail"
-    curl -sf http://grafana:3000/api/health > /dev/null && echo "grafana:ready" || echo "grafana:fail"
-' 2>/dev/null | while read -r result; do
+while read -r result; do
     svc="${result%%:*}"
     status="${result##*:}"
     if [[ "$status" == "ready" ]]; then
@@ -155,7 +152,13 @@ kubectl run -n monitoring smoke-obs --rm -it \
     else
       fail "Observability: ${svc}"
     fi
-  done
+done < <(kubectl run -n monitoring smoke-obs --rm --image=curlimages/curl:8.6.0 \
+  --restart=Never --quiet -- sh -c '
+    curl -sf http://prometheus:9090/-/ready > /dev/null && echo "prometheus:ready" || echo "prometheus:fail"
+    curl -sf http://alertmanager:9093/-/ready > /dev/null && echo "alertmanager:ready" || echo "alertmanager:fail"
+    curl -sf http://loki:3100/ready > /dev/null && echo "loki:ready" || echo "loki:fail"
+    curl -sf http://grafana:3000/api/health > /dev/null && echo "grafana:ready" || echo "grafana:fail"
+' 2>/dev/null)
 
 kubectl run -n tracing smoke-zipkin --rm -it \
   --image=curlimages/curl:8.6.0 --restart=Never --quiet -- \

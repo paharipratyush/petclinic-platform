@@ -130,3 +130,4 @@ echo "WARNING: Secrets not synced after 60 seconds. Check ESO logs:"
 echo "  kubectl logs -n external-secrets -l app.kubernetes.io/name=external-secrets"
 echo "  kubectl describe externalsecret rds-credentials -n $NAMESPACE"
 echo "  kubectl describe externalsecret openai-api-key -n $NAMESPACE"
+exit 1
