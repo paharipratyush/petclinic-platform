@@ -73,6 +73,59 @@ echo "  CRD installed."
 echo ""
 echo "==> Step 3 — Deploying Prometheus..."
 kubectl apply -f "$OBS_DIR/prometheus.yaml"
+
+# When running for prod, patch the prometheus ConfigMap to also scrape prod services.
+# The base prometheus.yaml only includes dev targets to avoid ServiceDown alerts when prod
+# has not been provisioned. Running --env prod adds prod scrape jobs to the same ConfigMap.
+if [[ "$ENV" == "prod" ]]; then
+  echo "  Adding prod scrape targets to Prometheus config..."
+  PROD_SCRAPE_YAML=$(cat <<'YAML'
+- job_name: api-gateway-prod
+  metrics_path: /actuator/prometheus
+  scrape_interval: 15s
+  static_configs:
+    - targets:
+        - api-gateway.petclinic-prod:8080
+- job_name: customers-service-prod
+  metrics_path: /actuator/prometheus
+  scrape_interval: 15s
+  static_configs:
+    - targets:
+        - customers-service.petclinic-prod:8081
+- job_name: visits-service-prod
+  metrics_path: /actuator/prometheus
+  scrape_interval: 15s
+  static_configs:
+    - targets:
+        - visits-service.petclinic-prod:8082
+- job_name: vets-service-prod
+  metrics_path: /actuator/prometheus
+  scrape_interval: 15s
+  static_configs:
+    - targets:
+        - vets-service.petclinic-prod:8083
+- job_name: genai-service-prod
+  metrics_path: /actuator/prometheus
+  scrape_interval: 15s
+  static_configs:
+    - targets:
+        - genai-service.petclinic-prod:8084
+YAML
+)
+  # Read current config, append prod jobs, patch ConfigMap
+  CURRENT=$(kubectl get configmap prometheus-config -n monitoring \
+    -o jsonpath='{.data.prometheus\.yml}' 2>/dev/null)
+  if ! echo "$CURRENT" | grep -q "api-gateway-prod"; then
+    UPDATED=$(printf '%s\n%s' "$CURRENT" "$PROD_SCRAPE_YAML")
+    kubectl patch configmap prometheus-config -n monitoring \
+      --type=merge \
+      -p "{\"data\":{\"prometheus.yml\":$(echo "$UPDATED" | jq -Rs .)}}"
+    echo "  Prod scrape targets added. Prometheus will pick up the new config on next reload."
+  else
+    echo "  Prod scrape targets already present in prometheus config."
+  fi
+fi
+
 kubectl rollout status deployment/prometheus -n monitoring --timeout=300s \
   || echo "  WARNING: Prometheus rollout timed out — Karpenter may be provisioning a node. Check: kubectl get pods -n monitoring"
 echo "  Prometheus deployed."
