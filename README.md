@@ -147,6 +147,7 @@ Developer pushes code
 - AWS CLI authenticated with sufficient permissions
 - A domain managed via [Cloudflare DNS](https://cloudflare.com) (free account works)
 - An [OpenAI API key](https://platform.openai.com) (for the GenAI service)
+- **macOS users only:** install GNU sed — `brew install gnu-sed && echo 'export PATH="$(brew --prefix gnu-sed)/libexec/gnubin:$PATH"' >> ~/.zshrc` — the scripts use GNU `sed -i` syntax which differs from BSD sed
 
 > **Estimated cost:** ~$80/month if both dev + prod are left running continuously (EKS control plane + t4g.small nodes + RDS). To minimize cost, run `bash scripts/destroy.sh --env dev` when you are done exploring. See [docs/architecture.md § Monthly Cost Estimate](docs/architecture.md#monthly-cost-estimate) for a line-item breakdown.
 

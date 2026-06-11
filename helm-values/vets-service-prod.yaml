@@ -3,7 +3,7 @@
 # after vets-service.yaml + prod.yaml, so it wins on any key it sets.
 #
 # ACTION REQUIRED: after running `terraform apply` in terraform/environments/prod/,
-# replace PENDING_PROD_RDS_ENDPOINT with the actual RDS hostname:
+# up.sh auto-replaces PENDING_PROD_RDS_ENDPOINT with the actual RDS hostname; or run manually:
 #   terraform -chdir=terraform/environments/prod output rds_endpoint
 config:
-  SPRING_DATASOURCE_URL: "jdbc:mysql://petclinic-prod-mysql.c1qcu40i4ohf.eu-central-1.rds.amazonaws.com:3306/petclinic"
+  SPRING_DATASOURCE_URL: "jdbc:mysql://PENDING_PROD_RDS_ENDPOINT:3306/petclinic"
