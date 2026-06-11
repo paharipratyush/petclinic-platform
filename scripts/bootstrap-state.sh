@@ -105,12 +105,25 @@ else
   echo "[DynamoDB] Table created"
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Auto-update backend.tf files so terraform init works without manual edits
+for ENV_DIR in "$REPO_ROOT/terraform/environments"/*/; do
+  BACKEND_FILE="$ENV_DIR/backend.tf"
+  if [[ -f "$BACKEND_FILE" ]]; then
+    sed -i "s|petclinic-terraform-state-[A-Z0-9_]*\"|petclinic-terraform-state-${ACCOUNT_ID}\"|g" "$BACKEND_FILE"
+    echo "[backend] Updated $BACKEND_FILE → bucket = \"${BUCKET_NAME}\""
+  fi
+done
+
 echo ""
 echo "Bootstrap complete!"
 echo ""
-echo "Backend configuration (already set in backend.tf):"
+echo "Backend configuration:"
 echo "  bucket         = \"${BUCKET_NAME}\""
 echo "  dynamodb_table = \"${TABLE_NAME}\""
 echo "  region         = \"${REGION}\""
 echo ""
-echo "Next step: terraform init"
+echo "backend.tf files updated automatically. Next step:"
+echo "  cd terraform/environments/{dev|prod} && terraform init"

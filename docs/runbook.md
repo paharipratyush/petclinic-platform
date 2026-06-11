@@ -411,7 +411,7 @@ If the AWS account is upgraded from free tier, re-enable automated backups by ch
 
 ### Overview
 
-DNS records for `{YOUR_DOMAIN}` are managed by the **Cloudflare Terraform provider** â€” there is no manual registrar step, no NS delegation, and no waiting for propagation. The provider creates ACM validation CNAMEs and the app subdomain CNAME directly in Cloudflare via API. See [ADR-0004](adr/0004-cloudflare-provider-for-dns.md) for the rationale.
+DNS records for `{YOUR_DOMAIN}` are managed by the **Cloudflare Terraform provider** â€” there is no manual registrar step, no NS delegation, and no waiting for propagation. The provider creates ACM validation CNAMEs and the app subdomain CNAME directly in Cloudflare via API. See [ADR-0013](adr/0013-cloudflare-provider-for-dns.md) for the rationale.
 
 Every `terraform plan` and `terraform apply` that touches the DNS module or the app CNAME requires `CLOUDFLARE_API_TOKEN` to be set in the shell environment. The token is **never stored in code or state**.
 

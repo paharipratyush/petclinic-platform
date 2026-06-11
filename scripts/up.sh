@@ -86,6 +86,29 @@ rm -f /tmp/petclinic-$ENV.plan
 
 CLUSTER_NAME=$(tf -chdir="$TF_DIR" output -raw cluster_name)
 
+# ── Step 1a: Auto-update ECR registry URL in helm-values ──────────────────
+# The ECR registry URL includes the AWS account ID, which differs per user.
+# helm-values/{env}.yaml ships with a YOUR_ACCOUNT_ID placeholder; replace it
+# with the real URL from terraform output so any fork works without manual edits.
+echo ""
+echo "==> Step 1a — Updating ECR registry URL in helm-values/$ENV.yaml..."
+ECR_REGISTRY=$(tf -chdir="$TF_DIR" output -raw ecr_registry_url 2>/dev/null || echo "")
+if [[ -n "$ECR_REGISTRY" ]]; then
+  HV_ENV_FILE="$REPO_ROOT/helm-values/$ENV.yaml"
+  CURRENT_REGISTRY=$(grep -m1 "registry:" "$HV_ENV_FILE" | sed "s/.*registry: *['\"]//;s/['\"].*//" | tr -d ' ')
+  if [[ "$CURRENT_REGISTRY" != "$ECR_REGISTRY" ]]; then
+    echo "  Updating registry: $CURRENT_REGISTRY → $ECR_REGISTRY"
+    sed -i "s|registry:.*|registry: \"$ECR_REGISTRY\"|" "$HV_ENV_FILE"
+    git -C "$REPO_ROOT" add "$HV_ENV_FILE"
+    git -C "$REPO_ROOT" commit -m "fix($ENV): update ECR registry URL to $ECR_REGISTRY" \
+      || echo "  (no change needed in git)"
+    git -C "$REPO_ROOT" push origin main \
+      || echo "  WARNING: git push failed — push helm-values/$ENV.yaml manually before ArgoCD syncs"
+  else
+    echo "  ECR registry already correct ($ECR_REGISTRY)."
+  fi
+fi
+
 # ── Step 1b: Auto-update RDS endpoint in helm-values if it changed ─────────
 # RDS gets a new hostname (random AWS suffix) on every destroy/rebuild.
 # If the endpoint in helm-values/ doesn't match what Terraform just created,

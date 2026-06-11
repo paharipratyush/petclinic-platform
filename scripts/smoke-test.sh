@@ -89,7 +89,7 @@ check_http "api-gateway /api/customer/owners" \
 check_http "api-gateway /api/vet/vets" \
   "http://api-gateway.${NS}:8080/api/vet/vets"
 
-# ── 5. RDS connectivity (DB-backed services) ──────────────────
+# ── 5. RDS connectivity — health + create/read write test ────────────────
 echo ""
 echo "[ 5/6 ] RDS connectivity"
 for svc in customers-service visits-service vets-service; do
@@ -102,6 +102,31 @@ for svc in customers-service visits-service vets-service; do
     fail "DB-backed service unhealthy: ${svc}"
   fi
 done
+
+# PETPLAT-86 AC: verify DB writes work — create an owner record and read it back
+echo "  DB write verification (create owner → read back)..."
+CREATE_RESPONSE=$(kubectl run -n "$NS" smoke-db-write --rm -it \
+  --image=curlimages/curl:8.6.0 --restart=Never --quiet -- \
+  curl -sf --max-time 15 -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"firstName":"SmokeTest","lastName":"User","address":"1 Test St","city":"TestCity","telephone":"0123456789"}' \
+    "http://customers-service.${NS}:8081/api/customer/owners" \
+  2>/dev/null || echo "")
+if echo "$CREATE_RESPONSE" | grep -q '"id"'; then
+  ok "RDS write: create owner succeeded"
+  # Read it back
+  OWNER_ID=$(echo "$CREATE_RESPONSE" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
+  if kubectl run -n "$NS" smoke-db-read --rm -it \
+      --image=curlimages/curl:8.6.0 --restart=Never --quiet -- \
+      curl -sf --max-time 10 "http://customers-service.${NS}:8081/api/customer/owners/${OWNER_ID}" \
+      > /dev/null 2>&1; then
+    ok "RDS read: owner read back succeeded (id=${OWNER_ID})"
+  else
+    fail "RDS read: could not read back owner id=${OWNER_ID}"
+  fi
+else
+  fail "RDS write: create owner failed (response: ${CREATE_RESPONSE:0:100})"
+fi
 
 # ── 6. Observability stack ────────────────────────────────────
 echo ""

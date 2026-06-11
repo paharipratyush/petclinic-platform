@@ -94,8 +94,8 @@ The image reference is assembled from three values:
 ```
 
 - `image.registry` — set in the env file (`dev.yaml` / `prod.yaml`)
-  - dev: `568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev`
-  - prod: `568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod`
+  - dev: `{YOUR_ACCOUNT_ID}.dkr.ecr.eu-central-1.amazonaws.com/petclinic-dev`
+  - prod: `{YOUR_ACCOUNT_ID}.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod`
 - `image.name` — short service name in the per-service file (e.g., `api-gateway`)
 - `image.tag` — 7-char git SHA; CI updates this via `yq` on every push
 

@@ -160,8 +160,8 @@ The EKS cluster uses EKS access entries (not `aws-auth` ConfigMap). To grant ano
 ```hcl
 # terraform/environments/dev/terraform.tfvars
 admin_iam_arns = [
-  "arn:aws:iam::568521409121:user/alice",
-  "arn:aws:iam::568521409121:role/engineer-role",
+  "arn:aws:iam::{YOUR_ACCOUNT_ID}:user/alice",
+  "arn:aws:iam::{YOUR_ACCOUNT_ID}:role/engineer-role",
 ]
 ```
 

@@ -185,12 +185,12 @@ DNS:
 | CI/CD auth | GitHub Actions OIDC | ADR-0005 |
 | RDS AZ | Single-AZ (both envs) | ADR-0006 |
 | CD strategy | ArgoCD GitOps | ADR-0008 |
-| Container registry | ECR Private | ADR-0010 |
-| Secrets | Secrets Manager + ESO | ADR-0011 |
+| Container registry | ECR Private | ADR-0009 |
+| Secrets | Secrets Manager + ESO | ADR-0010 |
+| Log aggregation | Loki + FluentBit (in-cluster) | ADR-0011 |
 | EKS worker architecture | ARM64 Graviton t4g.small | ADR-0012 |
 | DNS provider | Cloudflare Terraform | ADR-0013 |
-| Log aggregation | Loki + FluentBit (in-cluster) | ADR-0014 |
-| Node scaling | Karpenter (planned E-14) | ADR-0009 |
+| Node scaling | Karpenter | ADR-0014 |
 
 See `docs/adr/` for full decision records.
 

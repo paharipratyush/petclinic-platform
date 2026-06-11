@@ -154,8 +154,10 @@ echo 'github_repo = "YOUR_USERNAME/spring-petclinic-microservices"' >> terraform
 ### 4 — Bootstrap state backend (once per AWS account)
 
 ```bash
-bash scripts/bootstrap-state.sh dev
+bash scripts/bootstrap-state.sh
 ```
+
+This creates the S3 bucket + DynamoDB table and **automatically updates `backend.tf`** in both environments with your account ID — no manual editing required.
 
 ### 5 — Deploy everything with one command
 

@@ -8,7 +8,7 @@
 replicaCount: 1
 
 image:
-  registry: "568521409121.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod"
+  registry: "YOUR_ACCOUNT_ID.dkr.ecr.eu-central-1.amazonaws.com/petclinic-prod"
 
 # Prod datasource URLs for MySQL services are in per-service prod override files:
 #   helm-values/customers-service-prod.yaml
