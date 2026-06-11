@@ -28,6 +28,9 @@
 
 set -euo pipefail
 
+# Disable AWS CLI pager so JSON output never pauses in a terminal pager
+export AWS_PAGER=""
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 

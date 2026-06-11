@@ -7,6 +7,8 @@
 #   ./scripts/bootstrap-state.sh --region eu-west-1
 set -euo pipefail
 
+export AWS_PAGER=""
+
 REGION="eu-central-1"
 
 while [[ $# -gt 0 ]]; do
