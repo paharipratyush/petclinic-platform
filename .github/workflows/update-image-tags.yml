@@ -3,6 +3,17 @@ name: Update Image Tags
 on:
   repository_dispatch:
     types: [app-image-built]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "7-char commit SHA of the images pushed to ECR (e.g. 793ac56)"
+        required: true
+        type: string
+      services:
+        description: "Space-separated list of services to update (e.g. config-server discovery-server)"
+        required: false
+        default: "config-server discovery-server api-gateway customers-service visits-service vets-service genai-service admin-server"
+        type: string
 
 permissions:
   contents: read
@@ -24,8 +35,8 @@ jobs:
       - name: Validate and sanitize payload inputs
         id: validate
         env:
-          SHA: ${{ github.event.client_payload.sha }}
-          SERVICES: ${{ github.event.client_payload.services }}
+          SHA: ${{ github.event.client_payload.sha || inputs.sha }}
+          SERVICES: ${{ github.event.client_payload.services || inputs.services }}
         run: |
           set -euo pipefail
           # Reject if SHA is not a valid hex string (7-40 chars) — prevents shell injection
