@@ -140,7 +140,7 @@ bash scripts/up.sh --env dev
 6. **External Secrets Operator install** — Helm-installs ESO with your IRSA role ARN. ESO syncs AWS Secrets Manager secrets → K8s Secrets. Services will not start until ESO is running.
 7. **ArgoCD Application CRDs** — Applies the 8 ArgoCD Application manifests for the env. ArgoCD starts watching `helm-values/` for each service. (Images are not in ECR yet — pods will be in `ImagePullBackOff` until you run step 6 of the Quick Start.)
 8. **ALB Controller + Ingress** — Installs the AWS Load Balancer Controller and creates the Ingress resource. The ALB is provisioned and a CNAME is created in Cloudflare pointing `petclinic-{env}.yourdomain.com` → ALB.
-9. **Observability stack** — Applies Prometheus, Grafana, Loki, FluentBit, Zipkin, and Alertmanager manifests to the `monitoring` and `tracing` namespaces.
+9. **Observability stack** — Applies Prometheus, Grafana, Loki, FluentBit, Zipkin, and Alertmanager manifests to the `monitoring` and `tracing` namespaces. Alertmanager starts with a null receiver (no email) unless `petclinic/alertmanager-smtp` exists in Secrets Manager — see step above for enabling email alerts.
 
 **If `up.sh` fails partway through:** The script is idempotent — most steps check whether resources already exist before creating them. You can re-run `bash scripts/up.sh --env dev` safely. If Terraform fails, check `terraform/environments/dev/` for partial state or run `terraform plan` manually to see what's missing.
 
@@ -288,16 +288,20 @@ open http://localhost:9093   # macOS; Linux: xdg-open; Windows: start
 # Shows active alerts and silences
 ```
 
-**To enable email alerts (prerequisite):** Alertmanager reads SMTP credentials from AWS Secrets Manager via ESO. Create the secret before running `up.sh`:
+**Email alerts are optional.** Alertmanager starts automatically with a null receiver (alerts visible in UI, no email sent). To enable email notifications after `up.sh` completes:
 
 ```bash
+# Create the SMTP secret in Secrets Manager
 aws secretsmanager create-secret \
   --name petclinic/alertmanager-smtp \
   --secret-string '{"email":"alerts@yourdomain.com","password":"your-smtp-app-password"}' \
   --region eu-central-1
+
+# Re-run the install script — it detects the secret and switches to SMTP automatically
+bash scripts/install-observability.sh --env dev
 ```
 
-If the secret is missing, Alertmanager still runs but silently drops email notifications. See `docs/monitoring-guide.md` for full details.
+See `docs/monitoring-guide.md#enabling-email-alerts` for full details.
 
 ### Logs via kubectl
 

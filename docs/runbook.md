@@ -1,6 +1,6 @@
 ﻿# Petclinic Platform â€” Operations Runbook
 
-**Last Updated:** 2026-06-09
+**Last Updated:** 2026-06-12
 **Purpose:** Step-by-step procedures for common operational tasks on the petclinic-platform infrastructure. Each procedure is self-contained and includes verification and rollback steps.
 
 ## Table of Contents
@@ -1343,7 +1343,7 @@ Complete rebuild procedure: [`docs/disaster-recovery.md Â§ Infrastructure Rebu
 | 1 | Bootstrap Terraform state backend: `bash scripts/bootstrap-state.sh {env}` | 1 min |
 | 2 | Apply Terraform: `cd terraform/environments/{env} && terraform init && terraform plan -out plan.out && terraform apply plan.out` | 10â€“15 min |
 | 3 | Configure kubectl: `aws eks update-kubeconfig --region eu-central-1 --name petclinic-{env}-eks` | 30 sec |
-| 4 | Bootstrap cluster add-ons (ESO, LB Controller, Karpenter, observability): `bash scripts/up.sh {env}` | 5 min |
+| 4 | Bootstrap cluster add-ons (ESO, LB Controller, Karpenter, observability): `bash scripts/up.sh --env {env}` | 5 min |
 | 5 | Apply base K8s manifests: namespaces, observability namespace, ESO CRDs, network policies | 2 min |
 | 6 | Install ArgoCD: `kubectl apply -f k8s/argocd/install/` + `kubectl apply -f k8s/argocd/argocd-rbac-cm.yaml` + AppProjects + wait for readiness | 2 min |
 | 7 | Register ArgoCD Applications: `kubectl apply -f k8s/argocd/appproject-dev.yaml -f k8s/argocd/appproject-prod.yaml` then `kubectl apply -f k8s/argocd/applications/{env}/` | 30 sec |
@@ -1381,13 +1381,33 @@ This env var is a no-op on Linux and macOS — it is safe to include uncondition
 
 **Wrong approach:** Pushing an empty commit or dummy file change. This is fragile and pollutes Git history.
 
-**Correct approach:** Use GitHub Actions `workflow_dispatch` to force a full rebuild:
+**Correct approach — Step 1: Force rebuild images in the application repo:**
 1. Go to the application repo fork on GitHub
 2. Actions → "CI - Build and Push" → Run workflow
 3. Set `force_rebuild_all` = `true`
 4. Click "Run workflow"
 
-All 8 services will be built and pushed to both `petclinic-dev` and `petclinic-prod` ECR repos.
+All 8 services will be built and pushed to both `petclinic-dev` and `petclinic-prod` ECR repos. The CI pipeline fires `repository_dispatch` to the platform repo after push, which triggers `update-image-tags.yml` to commit the new SHA to `helm-values/`.
+
+**Correct approach — Step 2 (only if `update-image-tags.yml` didn't auto-trigger):**
+
+If the `repository_dispatch` from the app repo failed (e.g., `PLATFORM_REPO_TOKEN` missing or expired), the image tags in `helm-values/` won't be updated. Diagnose with:
+```bash
+# Check if update-image-tags ran (look for "ci: update image tags to ..." commit)
+git log --oneline -5
+
+# Check what tags now exist in ECR
+aws ecr list-images --repository-name petclinic-dev/config-server \
+  --region eu-central-1 --output table
+```
+
+If the commit is missing, trigger manually from the **platform repo** on GitHub:
+1. Actions → "Update Image Tags" → Run workflow
+2. Enter the 7-char SHA from ECR (e.g., `64d78dd`)
+3. Leave services as the default (all 8)
+4. Click "Run workflow"
+
+ArgoCD will auto-sync within ~3 minutes of the tag commit landing in `helm-values/`.
 
 ---
 
@@ -1457,6 +1477,34 @@ kubectl get pods -n petclinic-dev --no-headers | grep -v Running
 ```
 
 **Prevention:** The `t4g.small` node has 2 GiB RAM. `api-gateway` can use up to 412 MiB at peak. With 8 services per node, memory pressure is expected on heavily loaded nodes. Karpenter scales out automatically when pressure is sustained — the eviction is a one-time event during a spike.
+
+---
+
+---
+
+### KI-007: Alertmanager Starts with Null Receiver When SMTP Secret Is Missing
+
+**Symptom:** On a fresh `up.sh` run, `alertmanager-config` ExternalSecret shows `NotReady` and the alertmanager pod was previously stuck in `ContainerCreating`. Since the fix, alertmanager deploys cleanly but email alerts are silenced (null receiver).
+
+**Root cause:** The ExternalSecret `alertmanager-config` pulls SMTP credentials from `petclinic/alertmanager-smtp` in AWS Secrets Manager. On a fresh environment this secret doesn't exist, so ESO cannot create the K8s Secret the alertmanager volume mount requires.
+
+**Current behaviour (fixed):** `install-observability.sh` detects whether `petclinic/alertmanager-smtp` exists before applying the ExternalSecret. If it doesn't exist, it creates a minimal K8s Secret with a `null` receiver so alertmanager starts immediately. Email alerts are silenced but the alertmanager UI is accessible and the pod is healthy.
+
+**Impact:** Prometheus alerts fire and are visible at `http://localhost:9093`, but no email notifications are sent.
+
+**To enable email alerts:**
+```bash
+# Step 1 — create the SMTP secret in Secrets Manager
+aws secretsmanager create-secret \
+  --name petclinic/alertmanager-smtp \
+  --secret-string '{"email":"you@gmail.com","password":"xxxx xxxx xxxx xxxx"}' \
+  --region eu-central-1
+
+# Step 2 — re-run the install script (detects the secret and switches to ESO-backed config)
+bash scripts/install-observability.sh --env dev
+```
+
+The re-run deletes the null-receiver K8s Secret, applies the ExternalSecret, ESO creates the SMTP-backed Secret, and alertmanager restarts with full email routing.
 
 ---
 

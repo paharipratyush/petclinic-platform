@@ -1,6 +1,6 @@
 # Petclinic Platform — Monitoring & Observability Guide
 
-**Last Updated:** 2026-06-09
+**Last Updated:** 2026-06-12
 **Purpose:** How to use the observability stack to monitor the Petclinic microservices: what to look at, how to query, and how to interpret what you see.
 
 ## Table of Contents
@@ -207,7 +207,9 @@ Alertmanager receives alerts from both Prometheus (metric alerts) and Loki (log-
 
 **Access:** http://localhost:9093
 
-### Routing Logic
+> **Default state (no SMTP configured):** On a fresh deploy, `install-observability.sh` starts Alertmanager with a **null receiver** — alerts are visible in the UI but no emails are sent. This is intentional; it avoids blocking the deployment on an optional SMTP secret. See [Enabling Email Alerts](#enabling-email-alerts) to switch to full email routing.
+
+### Routing Logic (when SMTP is configured)
 
 ```
 All alerts → email-default (warning/default)
@@ -445,50 +447,61 @@ Loki alert rules are in the `loki-alert-rules` ConfigMap inside `k8s/base/observ
 
 ### Alertmanager Routing Rules
 
-To add a new receiver or routing rule, edit the `alertmanager-config` Secret in `k8s/base/observability/alertmanager.yaml`. The configuration is base64-encoded when deployed; `install-observability.sh` handles encoding. Edit the plain-text source in the script's `ALERTMANAGER_CONFIG` variable, then re-run the install script.
+To add a new receiver or routing rule, edit the ExternalSecret template in `k8s/base/external-secrets/alertmanager-config.yaml`. The `spec.target.template.data.alertmanager.yml` field contains the full alertmanager YAML config (with `{{ .smtp_email }}` and `{{ .smtp_password }}` interpolated by ESO at sync time).
+
+After editing:
+```bash
+# Re-apply the ExternalSecret — ESO picks up the new template and recreates the K8s Secret
+kubectl apply -f k8s/base/external-secrets/alertmanager-config.yaml
+# Force immediate ESO refresh:
+kubectl annotate externalsecret alertmanager-config -n monitoring \
+  force-sync=$(date +%s) --overwrite
+# Restart alertmanager to load the new config:
+kubectl rollout restart deployment/alertmanager -n monitoring
+```
+
+If SMTP is not configured (null receiver), the routing config doesn't matter — re-run `install-observability.sh` after creating the SMTP secret to switch to the ExternalSecret-backed config.
 
 ---
 
 ## Enabling Email Alerts
 
-Alertmanager email credentials are provisioned via ESO from AWS Secrets Manager — no env vars or hardcoded passwords needed. `install-observability.sh` applies the ExternalSecret; ESO syncs the secret automatically.
+By default, Alertmanager starts with a null receiver (alerts visible in UI, no email sent). To enable email routing, create the SMTP secret in Secrets Manager and re-run the install script — it detects the secret automatically and switches from null receiver to full SMTP config.
 
 ```bash
 # 1. Generate a Gmail App Password at https://myaccount.google.com/apppasswords
 
-# 2. Store credentials in Secrets Manager BEFORE running the install script
+# 2. Store credentials in Secrets Manager
 aws secretsmanager create-secret \
   --name petclinic/alertmanager-smtp \
   --secret-string '{"email":"you@gmail.com","password":"<your-app-password>"}' \
   --region eu-central-1
 
-# 3. Run the install script — ESO provisions the K8s secret automatically
+# 3. Re-run the install script — it detects the secret, deletes the null-receiver K8s Secret,
+#    applies the ExternalSecret, and ESO provisions the SMTP-backed Secret automatically.
 bash scripts/install-observability.sh --env dev
 
 # 4. Verify ESO synced the secret
 kubectl get externalsecret alertmanager-config -n monitoring
 # READY column should show "SecretSynced"
 
-# 5. Verify Alertmanager loaded the credentials
+# 5. Verify Alertmanager loaded the SMTP credentials
 kubectl -n monitoring get secret alertmanager-config -o jsonpath='{.data.alertmanager\.yml}' \
-  | base64 -d | grep smtp_auth_password
-# Should show your actual password hash, not a placeholder
-
-# To force an immediate ESO refresh (default interval is 1h):
-kubectl annotate externalsecret alertmanager-config -n monitoring \
-  force-sync=$(date +%s) --overwrite
+  | base64 -d | grep smtp_auth_username
+# Should show your email address, not a placeholder
 ```
 
-> **If the secret already exists** and you need to update it:
+> **If the secret already exists** and you need to update the password:
 > ```bash
 > aws secretsmanager put-secret-value \
 >   --secret-id petclinic/alertmanager-smtp \
 >   --secret-string '{"email":"you@gmail.com","password":"<new-password>"}' \
 >   --region eu-central-1
-> # Force ESO sync to pick up the change immediately:
+> # Force ESO to pick up the change immediately (default refresh interval is 1h):
 > kubectl annotate externalsecret alertmanager-config -n monitoring \
 >   force-sync=$(date +%s) --overwrite
 > ```
+
 
 ## Adding Prod Scrape Targets to Prometheus
 
