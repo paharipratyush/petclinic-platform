@@ -123,6 +123,19 @@ fi
 # ── Step 7: Deploy Grafana ────────────────────────────────────────────────────
 echo ""
 echo "==> Step 7 — Deploying Grafana..."
+# Apply the ExternalSecret — ESO creates grafana-admin Secret from Secrets Manager.
+# Prereq: petclinic/{env}/grafana-admin must exist in Secrets Manager (created by terraform/modules/secrets).
+if [[ "$ENV" == "prod" ]]; then
+  kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/grafana-admin-prod.yaml"
+else
+  kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/grafana-admin.yaml"
+fi
+echo "  Waiting for ESO to create grafana-admin secret..."
+kubectl wait externalsecret/grafana-admin -n monitoring \
+  --for=condition=Ready --timeout=60s || {
+  echo "  WARNING: grafana-admin ExternalSecret not Ready within 60s. Grafana may fail to start."
+  echo "  Check: kubectl describe externalsecret grafana-admin -n monitoring"
+}
 kubectl apply -f "$OBS_DIR/grafana.yaml"
 kubectl rollout status deployment/grafana -n monitoring --timeout=300s \
   || echo "  WARNING: Grafana rollout timed out — Karpenter may be provisioning a node. Check: kubectl get pods -n monitoring"
@@ -138,8 +151,9 @@ echo "  Alert rules applied."
 echo ""
 echo "==> Step 9 — Deploying Zipkin..."
 kubectl apply -f "$OBS_DIR/zipkin/zipkin.yaml"
-kubectl rollout status deployment/zipkin -n tracing --timeout=300s \
-  || echo "  WARNING: Zipkin rollout timed out — Karpenter may be provisioning a node. Check: kubectl get pods -n tracing"
+if ! kubectl rollout status -n tracing deploy/zipkin --timeout=300s; then
+  echo "  WARNING: Zipkin rollout timed out — Karpenter may be provisioning a node. Check: kubectl get pods -n tracing"
+fi
 echo "  Zipkin deployed."
 
 # ── Step 10: Verify ───────────────────────────────────────────────────────────
