@@ -177,7 +177,8 @@ aws eks update-kubeconfig \
 
 # Verify
 kubectl get nodes
-# Expected: 4× Ready nodes (t4g.small ARM64)
+# Expected: 2–4 Ready nodes (t4g.small ARM64)
+# The managed node group starts with 2; Karpenter adds more as workloads demand capacity.
 
 kubectl get pods -n petclinic-dev
 # Expected: 8 pods, all 1/1 Running (startup order: config, discovery, then others)
@@ -345,7 +346,7 @@ kubectl rollout status deployment/api-gateway -n petclinic-dev
 
 # Or force an immediate sync via ArgoCD
 kubectl port-forward svc/argocd-server -n argocd 8443:443 &
-argocd login localhost:8443 --insecure  # password = TF_VAR_grafana_admin_password (set during up.sh)
+argocd login localhost:8443 --insecure  # password = ArgoCD admin password (see: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
 argocd app sync api-gateway-dev
 ```
 

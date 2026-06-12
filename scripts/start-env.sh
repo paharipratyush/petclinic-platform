@@ -14,8 +14,9 @@ set -euo pipefail
 
 REGION="${AWS_DEFAULT_REGION:-eu-central-1}"
 
-# Default node counts (adjust if your Terraform uses different values)
-DEV_DESIRED_NODES=4
+# Node counts match the Terraform managed node group configuration (2 nodes per env).
+# Karpenter adds ephemeral capacity on top of this baseline.
+DEV_DESIRED_NODES=2
 PROD_DESIRED_NODES=2
 DEV_MAX_NODES=4
 PROD_MAX_NODES=4

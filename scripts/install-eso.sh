@@ -80,16 +80,23 @@ kubectl apply -f "$REPO_ROOT/k8s/base/external-secrets/cluster-secret-store.yaml
 
 echo ""
 echo "==> Step 6 — Verify ClusterSecretStore is Ready..."
+_css_ready=false
 for i in $(seq 1 12); do
   STATUS=$(kubectl get clustersecretstore aws-secrets-manager \
     -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
   if [[ "$STATUS" == "True" ]]; then
     echo "    ClusterSecretStore is Ready."
+    _css_ready=true
     break
   fi
   echo "    Waiting for ClusterSecretStore... ($((i * 5))s elapsed)"
   sleep 5
 done
+if ! $_css_ready; then
+  echo "ERROR: ClusterSecretStore did not become Ready after 60s."
+  echo "       Check ESO pod logs: kubectl logs -n external-secrets -l app.kubernetes.io/name=external-secrets"
+  exit 1
+fi
 
 NAMESPACE="petclinic-$ENV"
 

@@ -56,10 +56,18 @@ for svc in "${SERVICES[@]}"; do
     NS="petclinic-$env"
     echo "--- $svc / $env ---"
 
+    # Build value file list; include the per-env service overlay (e.g. customers-service-prod.yaml)
+    # if it exists. This file carries prod-specific overrides like RDS endpoint.
+    EXTRA_VALUES=()
+    if [[ "$env" == "prod" && -f "$VALUES_DIR/${svc}-prod.yaml" ]]; then
+      EXTRA_VALUES=("-f" "$VALUES_DIR/${svc}-prod.yaml")
+    fi
+
     # 1. Lint
     if ! helm lint "$CHART_DIR" \
       -f "$SVC_VALUES" \
       -f "$ENV_VALUES" \
+      "${EXTRA_VALUES[@]}" \
       --set "image.tag=test" \
       --quiet; then
       echo "FAIL: helm lint $svc/$env"
@@ -68,12 +76,18 @@ for svc in "${SERVICES[@]}"; do
     fi
 
     # 2. Template + dry-run (--validate=false avoids OpenAPI download; struct is verified by lint)
-    if ! helm template "$svc" "$CHART_DIR" \
+    # Suppress kubectl stderr (deprecation warnings) so they don't clutter output.
+    # Use || to capture the exit code safely under set -e.
+    _dry_rc=0
+    helm template "$svc" "$CHART_DIR" \
       --namespace "$NS" \
       -f "$SVC_VALUES" \
       -f "$ENV_VALUES" \
+      "${EXTRA_VALUES[@]}" \
       --set "image.tag=test" \
-      | kubectl apply --dry-run=client --validate=false --namespace "$NS" -f - 2>&1; then
+      | kubectl apply --dry-run=client --validate=false --namespace "$NS" -f - 2>/dev/null \
+      || _dry_rc=$?
+    if [[ $_dry_rc -ne 0 ]]; then
       echo "FAIL: kubectl dry-run $svc/$env"
       ERRORS=$((ERRORS + 1))
       continue

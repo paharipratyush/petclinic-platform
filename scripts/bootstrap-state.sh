@@ -114,7 +114,7 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 for ENV_DIR in "$REPO_ROOT/terraform/environments"/*/; do
   BACKEND_FILE="$ENV_DIR/backend.tf"
   if [[ -f "$BACKEND_FILE" ]]; then
-    sed -i "s|petclinic-terraform-state-[A-Z0-9_]*\"|petclinic-terraform-state-${ACCOUNT_ID}\"|g" "$BACKEND_FILE"
+    sed -i "s|petclinic-terraform-state-[A-Za-z0-9_]*\"|petclinic-terraform-state-${ACCOUNT_ID}\"|g" "$BACKEND_FILE"
     echo "[backend] Updated $BACKEND_FILE → bucket = \"${BUCKET_NAME}\""
   fi
 done

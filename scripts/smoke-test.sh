@@ -152,9 +152,12 @@ check_http "api-gateway /api/vet/vets" \
 # ── 5. RDS connectivity — health + write/read test ────────────────────────────
 echo ""
 echo "[ 5/6 ] RDS connectivity"
-declare -A SVC_PORT=([customers-service]=8081 [visits-service]=8082 [vets-service]=8083)
 for svc in customers-service visits-service vets-service; do
-  port="${SVC_PORT[$svc]}"
+  case "$svc" in
+    customers-service) port=8081 ;;
+    visits-service)    port=8082 ;;
+    vets-service)      port=8083 ;;
+  esac
   if kubectl exec -n "$NS" "$APP_POD" -- \
       curl -sf --max-time 10 "http://${svc}.${NS}:${port}/actuator/health" \
       > /dev/null 2>&1; then

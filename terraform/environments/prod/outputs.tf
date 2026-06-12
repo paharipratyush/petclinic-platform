@@ -166,6 +166,7 @@ output "karpenter_instance_profile_name" {
 output "github_actions_role_arn" {
   description = "GitHub Actions IAM role ARN — set as AWS_ROLE_ARN in GitHub Secrets on the app repo fork"
   value       = module.github_oidc.role_arn
+  sensitive   = true
 }
 
 output "github_oidc_provider_arn" {

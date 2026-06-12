@@ -1,4 +1,5 @@
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 # GitHub Actions OIDC identity provider (one per AWS account).
 # If this provider already exists in your account, import it:
@@ -79,7 +80,7 @@ resource "aws_iam_role_policy" "ecr_push" {
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
         ]
-        Resource = "arn:aws:ecr:eu-central-1:${data.aws_caller_identity.current.account_id}:repository/petclinic-*"
+        Resource = "arn:aws:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/petclinic-*"
       },
     ]
   })

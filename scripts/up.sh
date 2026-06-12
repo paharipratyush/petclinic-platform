@@ -118,6 +118,7 @@ if [[ -n "$ECR_REGISTRY" ]]; then
     git -C "$REPO_ROOT" add "$HV_ENV_FILE"
     git -C "$REPO_ROOT" commit -m "fix($ENV): update ECR registry URL to $ECR_REGISTRY" \
       || echo "  (no change needed in git)"
+    git -C "$REPO_ROOT" pull --rebase origin main 2>/dev/null || true
     git -C "$REPO_ROOT" push origin main \
       || echo "  WARNING: git push failed — push helm-values/$ENV.yaml manually before ArgoCD syncs"
   else
@@ -148,6 +149,7 @@ if [[ -n "$RDS_ENDPOINT" ]]; then
     done
     git -C "$REPO_ROOT" add "${HV_FILES[@]}"
     git -C "$REPO_ROOT" commit -m "fix($ENV): update RDS endpoint to $RDS_ENDPOINT"
+    git -C "$REPO_ROOT" pull --rebase origin main 2>/dev/null || true
     git -C "$REPO_ROOT" push origin main \
       || echo "  WARNING: git push failed — update helm-values/ manually then push before ArgoCD syncs"
   else

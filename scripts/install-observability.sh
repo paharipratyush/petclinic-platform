@@ -72,7 +72,7 @@ echo "  Network policies applied."
 # ── Step 2: Install PrometheusRule CRD ────────────────────────────────────────
 echo ""
 echo "==> Step 2 — Installing PrometheusRule CRD..."
-kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
+kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.74.0/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
 echo "  CRD installed."
 
 # ── Step 3: Deploy Prometheus ─────────────────────────────────────────────────

@@ -60,6 +60,11 @@ TF_DIR="$REPO_ROOT/terraform/environments/$ENV"
 NAMESPACE="petclinic-$ENV"
 REGION="eu-central-1"
 
+# ── Pre-flight: required tools ───────────────────────────────────────────────
+for _tool in aws python3 git; do
+  command -v "$_tool" &>/dev/null || { echo "ERROR: '$_tool' not found in PATH"; exit 1; }
+done
+
 # ── Pre-flight: validate required environment variables ─────────────────────
 # Terraform prompts interactively for missing variables, turning an automated
 # destroy into an interactive session. Catch missing vars here instead.
@@ -101,6 +106,22 @@ CLUSTER_REACHABLE=false
 if kubectl cluster-info &>/dev/null 2>&1; then
   CLUSTER_REACHABLE=true
 fi
+CLUSTER_NAME="petclinic-${ENV}-eks"
+
+# Helper: list ALBs in this account that belong to this cluster (by tag).
+# AWS LB Controller tags every ALB with kubernetes.io/cluster/<cluster-name>=owned.
+_cluster_alb_arns() {
+  local _arns
+  _arns=$(aws elbv2 describe-load-balancers --region "$REGION" \
+    --query "LoadBalancers[?starts_with(LoadBalancerName, 'k8s-')].LoadBalancerArn" \
+    --output text 2>/dev/null | tr '\t' '\n' | grep -v '^$' || true)
+  for _a in $_arns; do
+    if aws elbv2 describe-tags --resource-arns "$_a" --region "$REGION" \
+        --output text 2>/dev/null | grep -q "kubernetes.io/cluster/${CLUSTER_NAME}"; then
+      echo "$_a"
+    fi
+  done
+}
 
 if $CLUSTER_REACHABLE; then
   INGRESS_EXISTS=$(kubectl get ingress petclinic-ingress -n "$NAMESPACE" --ignore-not-found -o name 2>/dev/null || true)
@@ -108,10 +129,6 @@ if $CLUSTER_REACHABLE; then
     kubectl delete ingress petclinic-ingress -n "$NAMESPACE"
     echo "  Ingress deleted. Waiting up to 3 minutes for ALB to be removed by the controller..."
 
-    # AWS LB Controller tags every ALB it creates with kubernetes.io/cluster/<cluster-name>.
-    # We filter by that tag rather than by name (name uses truncated namespace segments and
-    # cannot be reconstructed reliably from the full namespace string).
-    CLUSTER_NAME="petclinic-${ENV}-eks"
     ALB_GONE=false
     for i in $(seq 1 18); do
       _alb_arns=$(aws elbv2 describe-load-balancers --region "$REGION" \
@@ -135,24 +152,20 @@ if $CLUSTER_REACHABLE; then
 
     if ! $ALB_GONE; then
       echo "  WARNING: ALB may still exist. Attempting manual deletion..."
-      # Fall back to manual ALB deletion if controller doesn't clean up in time
-      ALB_ARNS=$(aws elbv2 describe-load-balancers --region "$REGION" \
-        --query "LoadBalancers[?contains(LoadBalancerName, 'k8s-')].LoadBalancerArn" \
-        --output text 2>/dev/null || true)
-      for arn in $ALB_ARNS; do
+      while IFS= read -r arn; do
+        [[ -z "$arn" ]] && continue
         echo "  Deleting ALB: $arn"
         aws elbv2 delete-load-balancer --load-balancer-arn "$arn" --region "$REGION" || true
-      done
+      done < <(_cluster_alb_arns)
       echo "  Waiting 30s for ALB deletion to propagate..."
       sleep 30
     fi
   else
     echo "  No Ingress found in $NAMESPACE — checking for orphaned ALBs..."
-    # If cluster is reachable but no Ingress, still clean up any orphaned ALBs
-    ALB_ARNS=$(aws elbv2 describe-load-balancers --region "$REGION" \
-      --query "LoadBalancers[?contains(LoadBalancerName, 'k8s-')].LoadBalancerArn" \
-      --output text 2>/dev/null || true)
-    for arn in $ALB_ARNS; do
+    _found_any=false
+    while IFS= read -r arn; do
+      [[ -z "$arn" ]] && continue
+      _found_any=true
       TGS=$(aws elbv2 describe-target-groups --load-balancer-arn "$arn" --region "$REGION" \
         --query 'TargetGroups[].TargetGroupArn' --output text 2>/dev/null || true)
       echo "  Deleting orphaned ALB: $arn"
@@ -161,15 +174,15 @@ if $CLUSTER_REACHABLE; then
         sleep 5
         aws elbv2 delete-target-group --target-group-arn "$tg" --region "$REGION" 2>/dev/null || true
       done
-    done
-    [[ -n "$ALB_ARNS" ]] && sleep 30
+    done < <(_cluster_alb_arns)
+    $_found_any && sleep 30
   fi
 else
   echo "  Cluster not reachable — checking for orphaned ALBs via AWS CLI..."
-  ALB_ARNS=$(aws elbv2 describe-load-balancers --region "$REGION" \
-    --query "LoadBalancers[?contains(LoadBalancerName, 'k8s-')].LoadBalancerArn" \
-    --output text 2>/dev/null || true)
-  for arn in $ALB_ARNS; do
+  _found_any=false
+  while IFS= read -r arn; do
+    [[ -z "$arn" ]] && continue
+    _found_any=true
     TGS=$(aws elbv2 describe-target-groups --load-balancer-arn "$arn" --region "$REGION" \
       --query 'TargetGroups[].TargetGroupArn' --output text 2>/dev/null || true)
     echo "  Deleting ALB: $arn"
@@ -178,8 +191,8 @@ else
       sleep 5
       aws elbv2 delete-target-group --target-group-arn "$tg" --region "$REGION" 2>/dev/null || true
     done
-  done
-  [[ -n "$ALB_ARNS" ]] && sleep 30
+  done < <(_cluster_alb_arns)
+  $_found_any && sleep 30
 fi
 
 # ── Step 1.5: Drain Karpenter-provisioned nodes ────────────────────────────
@@ -651,6 +664,7 @@ git -C "$REPO_ROOT" add "${STAGE_FILES[@]}" 2>/dev/null || true
 if ! git -C "$REPO_ROOT" diff --cached --quiet 2>/dev/null; then
   git -C "$REPO_ROOT" commit \
     -m "chore($ENV): reset account-specific placeholders after destroy"
+  git -C "$REPO_ROOT" pull --rebase origin main 2>/dev/null || true
   git -C "$REPO_ROOT" push origin main \
     || echo "  WARNING: git push failed — push placeholder resets manually before next up.sh"
   echo "  Placeholder resets committed and pushed."

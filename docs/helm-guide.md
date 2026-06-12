@@ -59,8 +59,8 @@ All keys are defined here with sensible defaults. Per-service and env files over
 
 | Key | Purpose |
 |-----|---------|
-| `image.name` | Image name. Currently full Docker Hub path (e.g., `springcommunity/spring-petclinic-config-server`). See [Image Registry Migration](#image-registry-migration). |
-| `image.tag` | Image tag. Default: `latest`. CI updates this on every push (PETPLAT-85). |
+| `image.name` | Short ECR image name (e.g., `config-server`). The registry prefix is set per-environment in `dev.yaml`/`prod.yaml` so the same per-service file works for both envs. |
+| `image.tag` | Commit SHA tag. CI updates this on every push (PETPLAT-85). Never `latest`. |
 | `service.port` | Container port |
 | `component` | `app.kubernetes.io/component` label value |
 | `replicaCount` | **Prod** replica count. `dev.yaml` overrides to 1. |
