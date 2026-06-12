@@ -14,9 +14,10 @@ set -euo pipefail
 
 REGION="${AWS_DEFAULT_REGION:-eu-central-1}"
 
-# Node counts match the Terraform managed node group configuration (2 nodes per env).
-# Karpenter adds ephemeral capacity on top of this baseline.
-DEV_DESIRED_NODES=2
+# Warm-restart node counts. Higher than Terraform's baseline desired_size (2) because
+# the full workload (8 services + observability + system pods) needs ~4 nodes on t4g.small.
+# Karpenter can provision the rest, but you need enough capacity for Karpenter itself to start.
+DEV_DESIRED_NODES=4
 PROD_DESIRED_NODES=2
 DEV_MAX_NODES=4
 PROD_MAX_NODES=4
