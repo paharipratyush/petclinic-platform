@@ -63,10 +63,17 @@ echo "  Environment: ${ENV}"
 echo "  Namespace:   ${NS}"
 echo "============================================================"
 echo ""
+TRACING_AVAILABLE=false
 info "Starting shared curl runners (one per namespace)..."
-start_runner "$APP_POD"     "$NS"
-start_runner "$OBS_POD"     monitoring
-start_runner "$TRACING_POD" tracing
+start_runner "$APP_POD"  "$NS"
+start_runner "$OBS_POD"  monitoring
+# Tracing namespace is optional — only present when install-observability.sh has run.
+if kubectl get namespace tracing &>/dev/null 2>&1; then
+  start_runner "$TRACING_POD" tracing
+  TRACING_AVAILABLE=true
+else
+  info "Namespace 'tracing' not found — Zipkin check will be skipped."
+fi
 echo ""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -187,11 +194,15 @@ check_http_obs "alertmanager" "http://alertmanager:9093/-/ready"
 check_http_obs "loki"         "http://loki:3100/ready"
 check_http_obs "grafana"      "http://grafana:3000/api/health"
 
-if kubectl exec -n tracing "$TRACING_POD" -- \
-    curl -sf --max-time 10 http://zipkin:9411/health > /dev/null 2>&1; then
-  ok "Observability: zipkin"
+if $TRACING_AVAILABLE; then
+  if kubectl exec -n tracing "$TRACING_POD" -- \
+      curl -sf --max-time 10 http://zipkin:9411/health > /dev/null 2>&1; then
+    ok "Observability: zipkin"
+  else
+    fail "Observability: zipkin"
+  fi
 else
-  fail "Observability: zipkin"
+  info "Zipkin skipped (tracing namespace not installed)"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────

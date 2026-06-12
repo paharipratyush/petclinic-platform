@@ -108,12 +108,22 @@ if $CLUSTER_REACHABLE; then
     kubectl delete ingress petclinic-ingress -n "$NAMESPACE"
     echo "  Ingress deleted. Waiting up to 3 minutes for ALB to be removed by the controller..."
 
+    # AWS LB Controller tags every ALB it creates with kubernetes.io/cluster/<cluster-name>.
+    # We filter by that tag rather than by name (name uses truncated namespace segments and
+    # cannot be reconstructed reliably from the full namespace string).
+    CLUSTER_NAME="petclinic-${ENV}-eks"
     ALB_GONE=false
     for i in $(seq 1 18); do
-      # Check if any ALBs tagged with the cluster name remain
-      ALB_COUNT=$(aws elbv2 describe-load-balancers --region "$REGION" \
-        --query "LoadBalancers[?contains(LoadBalancerName, 'k8s-${NAMESPACE//petclinic-/petclinic-}-')]|length(@)" \
-        --output text 2>/dev/null || echo "0")
+      _alb_arns=$(aws elbv2 describe-load-balancers --region "$REGION" \
+        --query "LoadBalancers[?starts_with(LoadBalancerName, 'k8s-')].LoadBalancerArn" \
+        --output text 2>/dev/null | tr '\t' '\n' | grep -v '^$' || true)
+      ALB_COUNT=0
+      for _alb_arn in $_alb_arns; do
+        if aws elbv2 describe-tags --resource-arns "$_alb_arn" --region "$REGION" \
+            --output text 2>/dev/null | grep -q "kubernetes.io/cluster/${CLUSTER_NAME}"; then
+          ALB_COUNT=$((ALB_COUNT + 1))
+        fi
+      done
       if [[ "$ALB_COUNT" == "0" ]]; then
         echo "  ALB removed by controller."
         ALB_GONE=true
@@ -611,11 +621,33 @@ if [[ -f "$HV_ENV_FILE" ]]; then
     "$HV_ENV_FILE" 2>/dev/null || true
 fi
 
+# For prod: reset prod-service helm-values files to PENDING_PROD_RDS_ENDPOINT placeholder
+# so the next up.sh --env prod can substitute the new RDS hostname cleanly.
+if [[ "$ENV" == "prod" ]]; then
+  for _svc in customers-service visits-service vets-service; do
+    _hv="$REPO_ROOT/helm-values/${_svc}-prod.yaml"
+    if [[ -f "$_hv" ]]; then
+      sed -i "s|jdbc:mysql://[^:]*:3306|jdbc:mysql://PENDING_PROD_RDS_ENDPOINT:3306|g" \
+        "$_hv" 2>/dev/null || true
+    fi
+  done
+  echo "  prod-service helm-values reset to PENDING_PROD_RDS_ENDPOINT placeholder."
+fi
+
 # Stage backend.tf (if reset above) + helm-values/{env}.yaml, then commit+push.
-git -C "$REPO_ROOT" add \
-  "terraform/environments/dev/backend.tf" \
-  "terraform/environments/prod/backend.tf" \
-  "helm-values/$ENV.yaml" 2>/dev/null || true
+STAGE_FILES=(
+  "terraform/environments/dev/backend.tf"
+  "terraform/environments/prod/backend.tf"
+  "helm-values/$ENV.yaml"
+)
+if [[ "$ENV" == "prod" ]]; then
+  STAGE_FILES+=(
+    "helm-values/customers-service-prod.yaml"
+    "helm-values/visits-service-prod.yaml"
+    "helm-values/vets-service-prod.yaml"
+  )
+fi
+git -C "$REPO_ROOT" add "${STAGE_FILES[@]}" 2>/dev/null || true
 if ! git -C "$REPO_ROOT" diff --cached --quiet 2>/dev/null; then
   git -C "$REPO_ROOT" commit \
     -m "chore($ENV): reset account-specific placeholders after destroy"

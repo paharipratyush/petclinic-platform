@@ -43,3 +43,8 @@ variable "budget_alert_email" {
   description = "Email address for AWS Budget alerts (50%, 80%, 100% of $100/month). Set via TF_VAR_budget_alert_email."
   type        = string
 }
+
+variable "github_repo" {
+  description = "GitHub repo in owner/repo format whose main branch may push images to ECR (e.g., your-username/spring-petclinic-microservices). Scopes the OIDC trust policy — required for CI/CD."
+  type        = string
+}

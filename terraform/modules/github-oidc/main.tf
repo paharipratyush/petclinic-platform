@@ -12,7 +12,10 @@ resource "aws_iam_openid_connect_provider" "github" {
     "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
   ]
 
-  tags = merge(var.tags, {
+  tags = merge({
+    Project   = var.project
+    ManagedBy = "terraform"
+  }, var.tags, {
     Name = "${var.project}-github-oidc-provider"
   })
 }
@@ -39,7 +42,10 @@ resource "aws_iam_role" "github_actions" {
     }]
   })
 
-  tags = merge(var.tags, {
+  tags = merge({
+    Project   = var.project
+    ManagedBy = "terraform"
+  }, var.tags, {
     Name = "${var.project}-github-actions-role"
   })
 }

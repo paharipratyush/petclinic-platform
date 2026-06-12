@@ -22,6 +22,10 @@ Get a new engineer productive with the Petclinic platform in under 90 minutes.
 
 **Estimated time: 20 min**
 
+> **Region:** This project is hardcoded to **eu-central-1** (Frankfurt). The region appears in `scripts/up.sh`, `scripts/destroy.sh`, Terraform provider blocks, and ECR URLs in `helm-values/`. To deploy to a different region, update those four locations before running `up.sh`.
+
+> **DNS provider:** The DNS module uses the **Cloudflare Terraform provider**. Your domain must be managed by Cloudflare (registered via Cloudflare Registrar or delegated to Cloudflare nameservers). Users on Route 53, GoDaddy, Namecheap, or other providers must replace `terraform/modules/dns/` with an equivalent module for their provider. See [ADR-0013](adr/0013-cloudflare-provider-for-dns.md).
+
 Install the following tools before starting.
 
 ### Required tools

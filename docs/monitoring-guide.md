@@ -45,7 +45,7 @@ Run these in separate terminals while working with the cluster:
 ```bash
 # Grafana — main UI (dashboards + logs)
 kubectl port-forward svc/grafana -n monitoring 3000:3000
-# http://localhost:3000  (admin / petclinic-admin)
+# http://localhost:3000  (admin / <your TF_VAR_grafana_admin_password>)
 
 # Prometheus — metrics + alert status
 kubectl port-forward svc/prometheus -n monitoring 9090:9090
@@ -112,7 +112,7 @@ increase(kube_pod_container_status_restarts_total[15m])
 
 ## Grafana — Dashboards & Log Exploration
 
-**Login:** http://localhost:3000 → username: `admin` / password: `petclinic-admin`
+**Login:** http://localhost:3000 → username: `admin` / password: `<your TF_VAR_grafana_admin_password>` (the value you set when running `up.sh`)
 
 > **Change the password** on first login: Profile → Change Password.
 

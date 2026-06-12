@@ -15,3 +15,7 @@ project     = "petclinic"
 
 # Your Cloudflare-managed domain (must match CLOUDFLARE_API_TOKEN permissions)
 domain_name = "yourdomain.com"
+
+# GitHub repo for your spring-petclinic-microservices fork (owner/repo)
+# Used to scope the GitHub Actions OIDC IAM role trust policy
+github_repo = "your-github-username/spring-petclinic-microservices"

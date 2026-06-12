@@ -46,6 +46,12 @@ done
 [[ -z "$ENV" ]] && usage
 [[ "$ENV" != "dev" && "$ENV" != "prod" ]] && { echo "ERROR: --env must be 'dev' or 'prod'"; exit 1; }
 
+# jq is required for the prod Prometheus ConfigMap patch (JSON serialization of the YAML blob).
+if ! command -v jq &>/dev/null; then
+  echo "ERROR: jq is required but not installed. Install it: https://jqlang.github.io/jq/"
+  exit 1
+fi
+
 echo "============================================================"
 echo "  Installing Observability Stack (raw K8s manifests)"
 echo "  Environment:  $ENV"

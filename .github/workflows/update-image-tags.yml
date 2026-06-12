@@ -79,7 +79,7 @@ jobs:
           # checksums_hashes_order: field 1=filename, field 19=SHA-256 (18th hash in the order file)
           EXPECTED=$(awk '$1=="yq_linux_amd64" {print $19}' /tmp/yq_checksums)
           if [[ -z "${EXPECTED}" ]]; then
-            echo "WARNING: could not extract SHA256 from checksums file — verification skipped"
+            echo "ERROR: could not extract SHA256 from checksums file — checksums format may have changed" >&2; exit 1
           elif [[ "${ACTUAL}" != "${EXPECTED}" ]]; then
             echo "ERROR: SHA256 mismatch! Got ${ACTUAL}, expected ${EXPECTED}" >&2; exit 1
           else

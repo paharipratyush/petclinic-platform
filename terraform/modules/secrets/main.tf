@@ -3,7 +3,11 @@ resource "aws_secretsmanager_secret" "grafana_admin" {
   description             = "Grafana admin credentials for the petclinic-${var.environment} monitoring stack"
   recovery_window_in_days = var.recovery_window_in_days
 
-  tags = merge(var.tags, {
+  tags = merge({
+    Project     = "petclinic"
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }, var.tags, {
     Component = "secrets"
   })
 }
@@ -21,7 +25,11 @@ resource "aws_secretsmanager_secret" "openai_api_key" {
   description             = "OpenAI API key for the GenAI service (petclinic-${var.environment})"
   recovery_window_in_days = var.recovery_window_in_days
 
-  tags = merge(var.tags, {
+  tags = merge({
+    Project     = "petclinic"
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }, var.tags, {
     Component = "secrets"
   })
 }

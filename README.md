@@ -149,6 +149,10 @@ Developer pushes code
 - An [OpenAI API key](https://platform.openai.com) (for the GenAI service)
 - **macOS users only:** install GNU sed — `brew install gnu-sed && echo 'export PATH="$(brew --prefix gnu-sed)/libexec/gnubin:$PATH"' >> ~/.zshrc` — the scripts use GNU `sed -i` syntax which differs from BSD sed
 
+> **Region:** This project is hardcoded to **eu-central-1** (Frankfurt). The region is set in `scripts/up.sh` (`REGION="eu-central-1"`), `scripts/destroy.sh`, all Terraform provider blocks, and the ECR URL pattern in `helm-values/`. To use a different region, update those four locations consistently before running `up.sh`.
+
+> **DNS provider:** The `terraform/modules/dns/` module uses the **Cloudflare Terraform provider** (`cloudflare_record`, `data "cloudflare_zone"`). Your domain must be managed by Cloudflare (registered via Cloudflare Registrar or with Cloudflare set as the nameserver). Users on Route 53, GoDaddy, Namecheap, or other registrars must rewrite the DNS module to use the appropriate Terraform provider (e.g., `aws_route53_record`). See [ADR-0013](docs/adr/0013-cloudflare-provider-for-dns.md) for the rationale.
+
 > **Estimated cost:** ~$80/month if both dev + prod are left running continuously (EKS control plane + t4g.small nodes + RDS). To minimize cost, run `bash scripts/destroy.sh --env dev` when you are done exploring. See [docs/architecture.md § Monthly Cost Estimate](docs/architecture.md#monthly-cost-estimate) for a line-item breakdown.
 
 ### 1 — Fork both repos

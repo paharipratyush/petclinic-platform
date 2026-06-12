@@ -530,6 +530,22 @@ module "karpenter" {
   }
 }
 
+# ------- E-10: GitHub OIDC federation for CI (PETPLAT-52) -------
+# Creates the GitHub Actions OIDC identity provider and IAM role that allows
+# the app repo's build workflow to push images to ECR without long-lived credentials.
+# Trust policy is scoped to var.github_repo:main only.
+
+module "github_oidc" {
+  source = "../../modules/github-oidc"
+
+  project     = var.project
+  github_repo = var.github_repo
+
+  tags = {
+    Component = "cicd"
+  }
+}
+
 # ------- E-14: AWS Budget alerts (PETPLAT-75) -------
 # Three notifications fired on actual (not forecasted) spend: 50%, 80%, 100%.
 # Forecasted alerts can fire before money is actually spent — ACTUAL ensures

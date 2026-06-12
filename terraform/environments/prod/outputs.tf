@@ -162,3 +162,13 @@ output "karpenter_instance_profile_name" {
   description = "EC2 instance profile name for Karpenter-launched nodes — referenced in EC2NodeClass"
   value       = module.karpenter.karpenter_instance_profile_name
 }
+
+output "github_actions_role_arn" {
+  description = "GitHub Actions IAM role ARN — set as AWS_ROLE_ARN in GitHub Secrets on the app repo fork"
+  value       = module.github_oidc.role_arn
+}
+
+output "github_oidc_provider_arn" {
+  description = "GitHub Actions OIDC identity provider ARN"
+  value       = module.github_oidc.oidc_provider_arn
+}

@@ -7,6 +7,11 @@ variable "project" {
 variable "environment" {
   description = "Environment (dev or prod)"
   type        = string
+
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment must be 'dev' or 'prod'."
+  }
 }
 
 variable "openai_api_key" {

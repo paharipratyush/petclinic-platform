@@ -1508,6 +1508,16 @@ The re-run deletes the null-receiver K8s Secret, applies the ExternalSecret, ESO
 
 ---
 
+### KI-008: Cloudflare Error 81044 ("Record does not exist") on terraform destroy
+
+**Symptom:** `terraform destroy` (or `destroy.sh`) previously failed with `Error: failed to create record: Record does not exist (81044)` during ACM certificate cleanup.
+
+**Root cause:** A wildcard ACM certificate (`*.domain + domain`) generates two `domain_validation_options` entries that point to the **same** CNAME record. Without filtering, two `cloudflare_record` resources managed the same DNS entry. On destroy, the first deletion succeeded; the second failed with 81044 because the record was already gone.
+
+**Fix (applied in `terraform/modules/dns/main.tf`):** The `for_each` on `cloudflare_record.cert_validation` now filters to `!startswith(dvo.domain_name, "*.")`, creating exactly one record. ACM validates both SANs from a single CNAME. Existing deployments do not need manual remediation — `destroy.sh` already auto-recovered from 81044 errors, and the permanent fix prevents the error from occurring at all.
+
+---
+
 ### KI-005: Karpenter NodePool Tag Substitution for Prod
 
 **Symptom:** Karpenter does not provision nodes in prod, or nodes are provisioned into the wrong cluster.
